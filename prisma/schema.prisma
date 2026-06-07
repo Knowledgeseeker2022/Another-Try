@@ -1,0 +1,433 @@
+// Lake Evendim — Prisma Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth (NextAuth / Auth.js required tables) ───────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Users & Identity ─────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // hashed, null for SSO-only users
+  mfaEnabled    Boolean   @default(false)
+  mfaSecret     String?   // TOTP secret, encrypted at rest
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  userRoles     UserRole[]
+  userGroups    UserGroup[]
+  apiKeys       ApiKey[]
+  auditLogs     AuditLog[]
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false) // built-in roles cannot be deleted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  userRoles   UserRole[]
+  groupRoles  GroupRole[]
+}
+
+model Permission {
+  id       String @id @default(cuid())
+  resource String // e.g. "users", "roles", "services"
+  action   String // e.g. "read", "write", "delete", "admin"
+
+  rolePermissions RolePermission[]
+
+  @@unique([resource, action])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userGroups UserGroup[]
+  groupRoles GroupRole[]
+}
+
+model UserGroup {
+  userId  String
+  groupId String
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+}
+
+model GroupRole {
+  groupId String
+  roleId  String
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  role  Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, roleId])
+}
+
+// ─── Services / Integrations ──────────────────────────────────────────────────
+
+enum ServiceStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  PENDING
+  DISABLED
+}
+
+enum SyncMode {
+  POLLING
+  WEBHOOK
+}
+
+model Service {
+  id          String        @id @default(cuid())
+  slug        String        @unique // e.g. "microsoft-365", "halopsa"
+  name        String
+  category    String        // e.g. "RMM", "PSA", "Licensing", "Security"
+  status      ServiceStatus @default(DISCONNECTED)
+  syncMode    SyncMode      @default(POLLING)
+  config      Json?         // encrypted credential config
+  lastSyncAt  DateTime?
+  nextSyncAt  DateTime?
+  pollInterval Int?         // seconds between polls
+  errorMessage String?
+  metadata    Json?         // logo URL, docs URL, etc.
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  syncLogs    ServiceSyncLog[]
+}
+
+model ServiceSyncLog {
+  id          String   @id @default(cuid())
+  serviceId   String
+  status      String   // "success" | "error" | "partial"
+  recordsIn   Int      @default(0)
+  recordsOut  Int      @default(0)
+  durationMs  Int?
+  error       String?  @db.Text
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+// ─── Organizations ────────────────────────────────────────────────────────────
+
+enum OrgStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  ARCHIVED
+}
+
+model Organization {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  domain      String?
+  industry    String?
+  tier        String?   // "standard", "professional", "enterprise"
+  status      OrgStatus @default(ACTIVE)
+  notes       String?   @db.Text
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  mappings       OrgMapping[]
+  orgGroups      OrgGroupMember[]
+  tickets        Ticket[]
+  securityEvents SecurityEvent[]
+  cloudUsers     CloudUser[]
+}
+
+model OrgMapping {
+  id             String   @id @default(cuid())
+  orgId          String
+  serviceSlug    String   // e.g. "halopsa"
+  externalId     String   // ID in the external system
+  externalName   String?  // name as it appears in external system
+  confidence     Int      @default(100) // 0-100 match confidence
+  isConfirmed    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceSlug, externalId])
+}
+
+model OrgGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  color       String?  // hex color for badge
+  criteria    Json?    // auto-assignment rules
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members OrgGroupMember[]
+}
+
+model OrgGroupMember {
+  orgId      String
+  orgGroupId String
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgGroup     OrgGroup     @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, orgGroupId])
+}
+
+// ─── SSO Configuration ────────────────────────────────────────────────────────
+
+model SsoConfig {
+  id           String   @id @default(cuid())
+  provider     String   // "microsoft-entra-id"
+  tenantId     String?
+  clientId     String?
+  clientSecret String?  // encrypted
+  domains      String[] // allowed email domains
+  isEnabled    Boolean  @default(false)
+  isDefault    Boolean  @default(false)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── API Keys ─────────────────────────────────────────────────────────────────
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+model ApiKey {
+  id          String       @id @default(cuid())
+  name        String
+  keyHash     String       @unique // SHA-256 hash of the actual key
+  keyPrefix   String       // first 8 chars shown in UI (e.g. "le_live_")
+  status      ApiKeyStatus @default(ACTIVE)
+  scopes      String[]     // e.g. ["read:orgs", "write:orgs"]
+  userId      String?      // nullable — key may be system-level
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+// ─── Applications ─────────────────────────────────────────────────────────────
+
+enum AppStatus {
+  ACTIVE
+  INACTIVE
+  BETA
+  DEPRECATED
+}
+
+model App {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  url         String?
+  logoUrl     String?
+  status      AppStatus @default(ACTIVE)
+  isInternal  Boolean   @default(true)
+  scopes      String[]  // what data lake resources it can access
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String   // e.g. "user.created", "service.sync", "api_key.revoked"
+  resource   String   // e.g. "user", "service", "org"
+  resourceId String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+}
+
+// ─── MSP Data Lake — Service-synced records ───────────────────────────────────
+
+model Ticket {
+  id                String        @id @default(cuid())
+  serviceSlug       String        // "halopsa"
+  externalId        String
+  orgId             String?
+  title             String
+  description       String?       @db.Text
+  status            String        // "open", "pending", "closed", etc.
+  priority          String?       // "low", "medium", "high", "critical"
+  type              String?
+  assignee          String?
+  requester         String?
+  externalCreatedAt DateTime?
+  externalUpdatedAt DateTime?
+  rawData           Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  organization Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+
+  @@unique([serviceSlug, externalId])
+  @@index([orgId])
+  @@index([status])
+  @@index([serviceSlug])
+}
+
+model SecurityEvent {
+  id                String        @id @default(cuid())
+  serviceSlug       String        // "todyl"
+  externalId        String
+  orgId             String?
+  type              String        // "alert", "incident", "threat"
+  severity          String        // "critical", "high", "medium", "low", "info"
+  title             String
+  description       String?       @db.Text
+  status            String        @default("open") // "open", "investigating", "resolved"
+  source            String?       // sub-service that fired (e.g., "EDR", "SIEM", "Firewall")
+  affectedAsset     String?
+  resolvedAt        DateTime?
+  externalCreatedAt DateTime?
+  rawData           Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  organization Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+
+  @@unique([serviceSlug, externalId])
+  @@index([orgId])
+  @@index([severity])
+  @@index([status])
+  @@index([serviceSlug])
+}
+
+model CloudUser {
+  id                String        @id @default(cuid())
+  serviceSlug       String        // "microsoft-365"
+  externalId        String
+  orgId             String?
+  displayName       String?
+  email             String?
+  jobTitle          String?
+  department        String?
+  isLicensed        Boolean       @default(false)
+  isEnabled         Boolean       @default(true)
+  mfaEnabled        Boolean?
+  licenses          String[]      // license SKU display names
+  externalCreatedAt DateTime?
+  rawData           Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  organization Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+
+  @@unique([serviceSlug, externalId])
+  @@index([orgId])
+  @@index([email])
+  @@index([serviceSlug])
+}

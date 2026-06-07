@@ -1,0 +1,157 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Lake Evendim — Dark nautical theme (default: dark) */
+    --background: 222 47% 7%;
+    --foreground: 210 40% 95%;
+
+    --card: 222 47% 10%;
+    --card-foreground: 210 40% 95%;
+
+    --popover: 222 47% 10%;
+    --popover-foreground: 210 40% 95%;
+
+    /* Sky-blue primary */
+    --primary: 200 98% 55%;
+    --primary-foreground: 222 47% 7%;
+
+    /* Indigo secondary */
+    --secondary: 243 75% 59%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 222 47% 14%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 175 70% 41%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 222 40% 18%;
+    --input: 222 40% 15%;
+    --ring: 200 98% 55%;
+
+    --radius: 0.5rem;
+
+    /* Charts */
+    --chart-1: 200 98% 55%;
+    --chart-2: 175 70% 41%;
+    --chart-3: 243 75% 59%;
+    --chart-4: 45 93% 58%;
+    --chart-5: 0 84% 60%;
+
+    /* Sidebar */
+    --sidebar-background: 222 47% 5%;
+    --sidebar-foreground: 215 20% 70%;
+    --sidebar-primary: 200 98% 55%;
+    --sidebar-primary-foreground: 222 47% 7%;
+    --sidebar-accent: 222 47% 12%;
+    --sidebar-accent-foreground: 210 40% 95%;
+    --sidebar-border: 222 40% 14%;
+    --sidebar-ring: 200 98% 55%;
+  }
+
+  /* Light mode overrides (if toggled) */
+  .light {
+    --background: 0 0% 98%;
+    --foreground: 222 47% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 10%;
+    --primary: 200 98% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 243 75% 55%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 40% 94%;
+    --muted-foreground: 215 16% 46%;
+    --accent: 175 70% 36%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 57%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 200 98% 42%;
+    --sidebar-background: 222 47% 10%;
+    --sidebar-foreground: 215 20% 70%;
+    --sidebar-primary: 200 98% 55%;
+    --sidebar-primary-foreground: 222 47% 7%;
+    --sidebar-accent: 222 47% 16%;
+    --sidebar-accent-foreground: 210 40% 95%;
+    --sidebar-border: 222 40% 20%;
+    --sidebar-ring: 200 98% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground;
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Status dot animations */
+  .status-online {
+    @apply bg-emerald-500;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    animation: pulse-green 2s infinite;
+  }
+  .status-warning {
+    @apply bg-amber-500;
+  }
+  .status-error {
+    @apply bg-red-500;
+  }
+  .status-offline {
+    @apply bg-slate-500;
+  }
+
+  @keyframes pulse-green {
+    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+
+  /* Glass card effect */
+  .glass {
+    @apply bg-card/60 backdrop-blur-sm border border-border/50;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+  }
+}

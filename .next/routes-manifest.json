@@ -1,0 +1,186 @@
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "dynamicRoutes": [
+    {
+      "page": "/api/auth/[...nextauth]",
+      "regex": "^/api/auth/(.+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPnextauth": "nxtPnextauth"
+      },
+      "namedRegex": "^/api/auth/(?<nxtPnextauth>.+?)(?:/)?$"
+    },
+    {
+      "page": "/api/orgs/[id]",
+      "regex": "^/api/orgs/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/orgs/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/services/[slug]",
+      "regex": "^/api/services/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPslug": "nxtPslug"
+      },
+      "namedRegex": "^/api/services/(?<nxtPslug>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/users/[id]",
+      "regex": "^/api/users/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/users/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/webhooks/[slug]",
+      "regex": "^/api/webhooks/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPslug": "nxtPslug"
+      },
+      "namedRegex": "^/api/webhooks/(?<nxtPslug>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/admin-guide",
+      "regex": "^/admin\\-guide(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin\\-guide(?:/)?$"
+    },
+    {
+      "page": "/api-keys",
+      "regex": "^/api\\-keys(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api\\-keys(?:/)?$"
+    },
+    {
+      "page": "/apps",
+      "regex": "^/apps(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/apps(?:/)?$"
+    },
+    {
+      "page": "/audit-log",
+      "regex": "^/audit\\-log(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/audit\\-log(?:/)?$"
+    },
+    {
+      "page": "/dashboard",
+      "regex": "^/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard(?:/)?$"
+    },
+    {
+      "page": "/groups",
+      "regex": "^/groups(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/groups(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/org-groups",
+      "regex": "^/org\\-groups(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/org\\-groups(?:/)?$"
+    },
+    {
+      "page": "/org-matching",
+      "regex": "^/org\\-matching(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/org\\-matching(?:/)?$"
+    },
+    {
+      "page": "/roles",
+      "regex": "^/roles(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/roles(?:/)?$"
+    },
+    {
+      "page": "/services",
+      "regex": "^/services(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/services(?:/)?$"
+    },
+    {
+      "page": "/settings",
+      "regex": "^/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings(?:/)?$"
+    },
+    {
+      "page": "/sso",
+      "regex": "^/sso(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/sso(?:/)?$"
+    },
+    {
+      "page": "/sso-setup",
+      "regex": "^/sso\\-setup(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/sso\\-setup(?:/)?$"
+    },
+    {
+      "page": "/user-guide",
+      "regex": "^/user\\-guide(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/user\\-guide(?:/)?$"
+    },
+    {
+      "page": "/users",
+      "regex": "^/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/users(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "RSC",
+    "varyHeader": "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Router-Segment-Prefetch",
+    "prefetchHeader": "Next-Router-Prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "Next-Router-Segment-Prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  },
+  "rewrites": []
+}

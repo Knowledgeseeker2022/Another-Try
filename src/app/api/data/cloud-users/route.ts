@@ -1,0 +1,39 @@
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { authenticateRequest, hasScope } from "@/lib/api-auth";
+
+export async function GET(req: Request) {
+  const auth = await authenticateRequest(req);
+  if (!auth.authenticated) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasScope(auth, "read:cloud-users")) return NextResponse.json({ error: "Forbidden: requires read:cloud-users scope" }, { status: 403 });
+
+  const { searchParams } = new URL(req.url);
+  const orgId     = searchParams.get("orgId");
+  const licensed  = searchParams.get("licensed");
+  const enabled   = searchParams.get("enabled");
+  const service   = searchParams.get("service");
+  const page      = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
+  const pageSize  = Math.min(500, Math.max(1, parseInt(searchParams.get("pageSize") ?? "100", 10)));
+
+  const where: Record<string, unknown> = {};
+  if (orgId)              where.orgId       = orgId;
+  if (licensed !== null && licensed !== undefined) where.isLicensed = licensed === "true";
+  if (enabled  !== null && enabled  !== undefined) where.isEnabled  = enabled  === "true";
+  if (service)            where.serviceSlug = service;
+
+  const [users, total] = await Promise.all([
+    db.cloudUser.findMany({
+      where,
+      include: { organization: { select: { id: true, name: true, slug: true } } },
+      orderBy: { displayName: "asc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    db.cloudUser.count({ where }),
+  ]);
+
+  return NextResponse.json({
+    data: users,
+    meta: { total, page, pageSize, pages: Math.ceil(total / pageSize) },
+  });
+}
