@@ -1,23 +1,18 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { requirePermission, setUserGrants, type GrantInput } from "@/lib/authz";
+import { userSelect } from "../route";
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const authz = await requirePermission("users", "read");
+  if (!authz.ok) return authz.response;
 
   const { id } = await params;
-  const user = await db.user.findUnique({
-    where: { id },
-    select: {
-      id: true, name: true, email: true, isActive: true,
-      mfaEnabled: true, lastLoginAt: true, createdAt: true,
-      userRoles: { include: { role: { select: { id: true, name: true } } } },
-    },
-  });
+  const user = await db.user.findUnique({ where: { id }, select: userSelect });
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(user);
 }
@@ -26,28 +21,37 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const authz = await requirePermission("users", "write");
+  if (!authz.ok) return authz.response;
 
   const { id } = await params;
   const body = await req.json();
-  const { name, isActive, roleIds } = body;
+  const { name, isActive, roleIds, grants } = body as {
+    name?: string;
+    isActive?: boolean;
+    roleIds?: string[]; // legacy: global grants
+    grants?: GrantInput[];
+  };
+
+  const existing = await db.user.findUnique({ where: { id }, select: { isActive: true } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const updateData: Record<string, unknown> = {};
   if (name !== undefined) updateData.name = name;
   if (isActive !== undefined) updateData.isActive = isActive;
 
-  const user = await db.user.update({ where: { id }, data: updateData });
+  // Deactivating revokes any live JWT session immediately (tokenVersion bump).
+  if (isActive === false && existing.isActive) {
+    updateData.tokenVersion = { increment: 1 };
+  }
 
-  // Replace all role assignments if roleIds provided
-  if (Array.isArray(roleIds)) {
-    await db.userRole.deleteMany({ where: { userId: id } });
-    if (roleIds.length > 0) {
-      await db.userRole.createMany({
-        data: roleIds.map((roleId: string) => ({ userId: id, roleId })),
-        skipDuplicates: true,
-      });
-    }
+  await db.user.update({ where: { id }, data: updateData });
+
+  // Replace grants if provided (scoped `grants` preferred; `roleIds` = global).
+  if (Array.isArray(grants)) {
+    await setUserGrants(id, grants);
+  } else if (Array.isArray(roleIds)) {
+    await setUserGrants(id, roleIds.map((roleId) => ({ roleId, scopeAllOrgs: true })));
   }
 
   await db.auditLog.create({
@@ -55,20 +59,16 @@ export async function PATCH(
       action: "user.updated",
       resource: "User",
       resourceId: id,
-      userId: session.user?.id ?? null,
-      metadata: { name, isActive, roleIds },
+      userId: authz.userId,
+      metadata: {
+        name: name ?? null,
+        isActive: isActive ?? null,
+        grants: (grants ?? (roleIds ? roleIds.map((roleId) => ({ roleId })) : null)) as unknown as Prisma.InputJsonValue,
+      },
     },
   });
 
-  const updated = await db.user.findUnique({
-    where: { id },
-    select: {
-      id: true, name: true, email: true, isActive: true,
-      mfaEnabled: true, lastLoginAt: true, createdAt: true,
-      userRoles: { include: { role: { select: { id: true, name: true } } } },
-    },
-  });
-
+  const updated = await db.user.findUnique({ where: { id }, select: userSelect });
   return NextResponse.json(updated);
 }
 
@@ -76,12 +76,12 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const authz = await requirePermission("users", "delete");
+  if (!authz.ok) return authz.response;
 
   const { id } = await params;
 
-  if (session.user?.id === id) {
+  if (authz.userId === id) {
     return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
   }
 
@@ -95,7 +95,7 @@ export async function DELETE(
       action: "user.deleted",
       resource: "User",
       resourceId: id,
-      userId: session.user?.id ?? null,
+      userId: authz.userId,
       metadata: { email: user.email },
     },
   });

@@ -23,6 +23,10 @@ export default async function RolesPage() {
       description: role.description,
       isSystem: role.isSystem,
       byResource,
+      permissions: role.permissions.map((rp) => ({
+        resource: rp.permission.resource,
+        action: rp.permission.action,
+      })),
       userCount: role._count.userRoles,
     };
   });

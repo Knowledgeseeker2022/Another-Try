@@ -50,6 +50,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           image: user.image,
+          tokenVersion: user.tokenVersion,
         };
       },
     }),
@@ -63,8 +64,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user }) {
+      // Initial sign-in: stamp the user id and their current token version.
       if (user) {
         token.id = user.id;
+        const dbUser = await db.user.findUnique({
+          where: { id: user.id as string },
+          select: { tokenVersion: true },
+        });
+        token.tokenVersion = dbUser?.tokenVersion ?? 0;
+        return token;
+      }
+
+      // Every subsequent request: re-validate against the DB so deactivation,
+      // deletion, or a forced token-version bump revokes the session immediately
+      // (no waiting for JWT expiry). Returning null invalidates the session.
+      if (token.id) {
+        const dbUser = await db.user.findUnique({
+          where: { id: token.id as string },
+          select: { isActive: true, tokenVersion: true },
+        });
+        if (!dbUser || !dbUser.isActive || dbUser.tokenVersion !== token.tokenVersion) {
+          return null;
+        }
       }
       return token;
     },

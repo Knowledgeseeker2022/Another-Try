@@ -14,7 +14,8 @@
 - **Credentials provider:** email + password. Passwords hashed with **bcrypt** (cost factor 12). Login is gated on `User.isActive`; `lastLoginAt` is updated on success.
 - **Microsoft Entra ID (Azure AD) provider:** issuer derived from `AUTH_MICROSOFT_ENTRA_ID_TENANT_ID`. Configured **entirely from environment variables**.
 - **Generic login failure by design:** `authorize()` returns `null` for *any* failure — wrong password and database-unreachable look identical to the user ("email or password is incorrect"). This avoids account enumeration but can mask outages.
-- A Prisma adapter is wired alongside the JWT strategy. Because sessions are JWT, the DB `Session` table is largely **vestigial** — there is no easy server-side session revocation.
+- A Prisma adapter is wired alongside the JWT strategy. Because sessions are JWT, the DB `Session` table is largely **vestigial**.
+- **Session revocation (Phase 1):** each user has a `tokenVersion`; the JWT carries a snapshot of it and the `jwt` callback re-validates `isActive` + `tokenVersion` against the DB on every request. Deactivating or deleting a user (and any `tokenVersion` bump) **invalidates their session immediately**, no waiting for token expiry. Note: this is enforced wherever `auth()` runs (all admin APIs, server components); `middleware.ts` only checks token presence, so a revoked user may briefly see a cached page shell until the next data call, which fails.
 
 ### Machine / API clients (data endpoints)
 - Endpoints under `/api/data/*` authenticate via **`Authorization: Bearer le_live_<key>`**.
@@ -27,12 +28,14 @@
 
 ---
 
-## 2. Authorization (RBAC)
+## 2. Authorization (scoped RBAC)
 
 - Full **role- and group-based access control** model: `Role`, `Permission`, `RolePermission`, `Group`, `UserRole`, `UserGroup`, `GroupRole`. Both roles **and** groups can grant permissions.
-- Permissions are modeled as **resource × action** (read / write / delete / admin).
-- Seeded **system roles:** Super Admin, Admin, Support, Read-Only.
-- Admin CRUD API routes require a valid session; the data APIs are scope-gated by API key.
+- Permissions are modeled as **resource × action** (read / write / delete / admin); `admin` on a resource implies read/write/delete on it.
+- **Scoped grants (Phase 1):** a grant is `(user or group) → role → optional scope`. Scope = an optional **app** (`appId` null = Admin-wide / all apps) and an optional **client-organization subset** (`scopeAllOrgs`, or specific orgs / org-groups). No scope = global. This is what lets a client executive see only their org's dashboard while an internal exec sees all clients.
+- **Enforcement (Phase 1):** `src/lib/authz.ts` resolves a user's effective grants (direct + via groups) and exposes `can(userId, resource, action, scope)`, `requirePermission(...)` (route guard returning 401/403), and `accessibleOrgIds(userId, appId?)` for data-row filtering. The users, roles, groups, and permissions APIs now enforce these. *Previously RBAC was modeled but not enforced — any authenticated user had full access to the admin APIs.*
+- Seeded **system roles:** Super Admin (break-glass, all permissions), Operations Manager, Compliance Lead, Technician, Client Executive (client-scoped, read-only), Read-Only. Each has a real least-privilege permission set; **least privilege by default** — a new user has no access until granted.
+- The data APIs (`/api/data/*`) remain scope-gated by API key (`hasScope()`); other admin routes outside Users/Roles/Groups still authorize on session presence only (to be tightened in later phases).
 
 ---
 
@@ -66,7 +69,7 @@
 2. **SSO config is not wired into login.** The `SsoConfig` record (and the SSO admin page's allowed-domains, etc.) is only read/written by `/api/sso` and its UI — `auth.ts` does **not** consume it. The Entra provider is driven purely by env vars, so SSO settings configured in the UI (e.g. allowed email domains) are **not enforced at authentication time**.
 3. **Default admin credentials are seeded** (`admin@evendim.local` / `Admin1234!`). Must be rotated before any non-local use.
 4. **Encryption is optional in dev** — without `ENCRYPTION_KEY`, third-party service credentials persist as plaintext in the database.
-5. **No server-side session revocation.** JWT sessions + a vestigial DB session table mean a compromised/issued token can't be easily invalidated before expiry.
+5. ~~**No server-side session revocation.**~~ **RESOLVED (Phase 1)** — deactivation/deletion now revokes sessions immediately via per-user `tokenVersion` re-validated in the JWT callback. Residual note: enforcement happens where `auth()` runs (APIs/server components), not in edge `middleware.ts`, so a revoked user may briefly see a cached page shell before the next data call fails.
 6. **App registry grants nothing.** The `App` model is an informational registry; it is **not** linked to API-key issuance or access enforcement (`api-auth.ts` never references it).
 7. **No automated tests / CI / container or IaC config** in the repo; backing services are started ad hoc. There is no security regression coverage.
 8. **`.next/` build output is committed to git** — generated artifacts in version control; should be `.gitignore`d.

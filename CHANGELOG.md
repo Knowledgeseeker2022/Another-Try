@@ -3,6 +3,21 @@
 All notable changes to Lake Evendim are recorded here, newest first. One plain-language
 line per change. Dates are `YYYY-MM-DD`.
 
+## 2026-06-18 — Phase 1: complete, scoped access model (Users / Roles / Groups)
+
+1. **RBAC is now actually enforced.** Previously every admin API only checked "are you logged in" — any signed-in user could do anything. Added a `can()` / `requirePermission()` authorization layer (`src/lib/authz.ts`) and wired it into the users, roles, groups, and permissions APIs (resource × action).
+2. **Added scope to role grants.** A grant is now `(user or group) → role → optional scope`: an optional app (null = Admin-wide) and an optional client-organization subset (all clients, or specific orgs / org-groups). Grants with no scope are global, so every existing assignment keeps working unchanged.
+3. This is the model future dashboards plug into: a new dashboard is a new app scope value, never a new permission system. `accessibleOrgIds()` answers "which clients can this user see" for dashboard data filtering.
+4. **Roles can now have their permissions edited.** Added `PATCH /api/roles` and a permission-matrix UI (resource × action grid) on the Roles page. Previously roles could be created but their permissions could never be set from the app.
+5. **Groups are now fully manageable.** Added group editing, member management, and scoped role attachment (`/api/groups/[id]`) plus a Groups edit UI. Previously groups could only be created/deleted and membership/roles were unreachable from the app.
+6. **Users get scoped role grants** in the invite/edit UI (role · app scope · client scope), replacing the flat role checkboxes.
+7. **Reconciled the seeded roles.** Renamed Admin → Operations Manager and Support → Technician; added Compliance Lead and Client Executive (client-scoped, read-only); kept Super Admin and Read-Only. Previously only Super Admin had any permissions — Admin/Support/Read-Only were empty shells; now every role gets a real least-privilege permission set.
+8. **Least privilege by default:** a newly created user has no access until a grant is added.
+9. **Fixed the session-revocation security gap.** Deactivating or deleting a user now ends their active session immediately. Added `User.tokenVersion`; the JWT callback re-validates `isActive` + token version on every request, and deactivation bumps the version. (Previously a JWT stayed valid up to ~30 days after deactivation/deletion.)
+10. **Aligned password hashing cost** for user creation to bcrypt factor 12 (was 10), matching the seed and SECURITY.md.
+11. Audit-logged every role, permission, group, and grant change (`role.created/updated/deleted`, `group.created/updated/deleted`, `user.created/updated/deleted` now record the grants).
+12. **Adopted Prisma migrations.** The repo previously used `db push` with no migration history; baselined the existing schema (`0_init`) and added `20260618165654_phase1_scoped_rbac`. The Phase 1 migration backfills the one existing grant as a global grant (no data loss).
+
 ## 2026-06-18 — Naming alignment (rename only, no behavior change)
 
 1. Renamed the leftover placeholder product name **"Bedrock"** to **"Lake Evendim"** everywhere it described this product. Lake Evendim is now the single name for both the control plane and its data lake.

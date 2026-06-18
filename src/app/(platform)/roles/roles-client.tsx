@@ -1,17 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Modal } from "@/components/ui/modal";
-import { Plus, Lock, Loader2, Trash2 } from "lucide-react";
+import { PermissionMatrix } from "@/components/shared/permission-matrix";
+import { Plus, Lock, Loader2, Trash2, Pencil } from "lucide-react";
 
 const ROLE_COLORS: Record<string, string> = {
-  "Super Admin": "text-red-400 bg-red-500/10 border-red-500/20",
-  "Admin":       "text-primary bg-primary/10 border-primary/20",
-  "Support":     "text-accent bg-accent/10 border-accent/20",
-  "Read-Only":   "text-slate-400 bg-slate-500/10 border-slate-500/20",
+  "Super Admin":        "text-red-400 bg-red-500/10 border-red-500/20",
+  "Operations Manager": "text-primary bg-primary/10 border-primary/20",
+  "Compliance Lead":    "text-amber-400 bg-amber-500/10 border-amber-500/20",
+  "Technician":         "text-accent bg-accent/10 border-accent/20",
+  "Client Executive":   "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+  "Read-Only":          "text-slate-400 bg-slate-500/10 border-slate-500/20",
 };
+
+interface Perm { resource: string; action: string }
 
 interface RoleRow {
   id: string;
@@ -19,7 +24,17 @@ interface RoleRow {
   description: string | null;
   isSystem: boolean;
   byResource: Record<string, string[]>;
+  permissions: Perm[];
   userCount: number;
+}
+
+const permKey = (p: Perm) => `${p.resource}:${p.action}`;
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+function byResourceFrom(perms: Perm[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const p of perms) (out[cap(p.resource)] ??= []).push(cap(p.action));
+  return out;
 }
 
 function NewRoleModal({ onClose, onCreated }: { onClose: () => void; onCreated: (r: RoleRow) => void }) {
@@ -43,7 +58,7 @@ function NewRoleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
       }
       const created = await res.json() as { id: string };
       toast.success(`Role "${name}" created.`);
-      onCreated({ id: created.id, name: name.trim(), description: description.trim() || null, isSystem: false, byResource: {}, userCount: 0 });
+      onCreated({ id: created.id, name: name.trim(), description: description.trim() || null, isSystem: false, byResource: {}, permissions: [], userCount: 0 });
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create role.");
@@ -64,7 +79,7 @@ function NewRoleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Can manage billing and subscriptions."
           className="h-9 px-3 rounded-lg bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring" />
       </div>
-      <p className="text-xs text-muted-foreground">Permissions can be assigned to the role after creation.</p>
+      <p className="text-xs text-muted-foreground">Assign permissions after creation via the role&apos;s Edit button.</p>
       <div className="flex justify-end gap-2 pt-1">
         <button type="button" onClick={onClose} className="h-8 px-3 rounded-lg border border-border text-xs font-medium text-foreground hover:bg-muted/40 transition-colors">Cancel</button>
         <button type="submit" disabled={saving} className="flex items-center gap-1.5 h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-60 transition-colors">
@@ -75,9 +90,75 @@ function NewRoleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
   );
 }
 
+function EditRoleModal({ role, onClose, onSaved }: { role: RoleRow; onClose: () => void; onSaved: (r: RoleRow) => void }) {
+  const [description, setDescription] = useState(role.description ?? "");
+  const [perms, setPerms] = useState<Set<string>>(new Set(role.permissions.map(permKey)));
+  const [catalog, setCatalog] = useState<{ resources: string[]; actions: string[] } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/permissions")
+      .then((r) => r.json())
+      .then((d: { resources: string[]; actions: string[] }) => setCatalog(d))
+      .catch(() => toast.error("Failed to load permission catalog."));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const permissions: Perm[] = [...perms].map((k) => {
+        const [resource, action] = k.split(":");
+        return { resource, action };
+      });
+      const res = await fetch("/api/roles", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: role.id, description: description.trim() || null, permissions }),
+      });
+      if (!res.ok) {
+        const err = await res.json() as { error?: string };
+        throw new Error(err.error ?? "Failed");
+      }
+      toast.success(`Role "${role.name}" updated.`);
+      onSaved({ ...role, description: description.trim() || null, permissions, byResource: byResourceFrom(permissions) });
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update role.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-foreground">Description</label>
+        <input value={description} onChange={(e) => setDescription(e.target.value)}
+          className="h-9 px-3 rounded-lg bg-input border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-foreground">Permissions <span className="text-muted-foreground font-normal">(resource × action)</span></label>
+        {role.name === "Super Admin" && (
+          <p className="text-xs text-amber-400/80">Super Admin is the break-glass role — leave all permissions enabled.</p>
+        )}
+        {catalog
+          ? <PermissionMatrix resources={catalog.resources} actions={catalog.actions} value={perms} onChange={setPerms} />
+          : <div className="flex items-center justify-center h-24"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /></div>}
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" onClick={onClose} className="h-8 px-3 rounded-lg border border-border text-xs font-medium text-foreground hover:bg-muted/40 transition-colors">Cancel</button>
+        <button type="button" onClick={handleSave} disabled={saving || !catalog} className="flex items-center gap-1.5 h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-60 transition-colors">
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save Permissions
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function RolesClient({ initial }: { initial: RoleRow[] }) {
   const [roles, setRoles] = useState<RoleRow[]>(initial);
   const [newRoleOpen, setNewRoleOpen] = useState(false);
+  const [editing, setEditing] = useState<RoleRow | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   async function handleDeleteRole(role: RoleRow) {
@@ -141,6 +222,13 @@ export function RolesClient({ initial }: { initial: RoleRow[] }) {
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${colorClass}`}>
                       {role.userCount} user{role.userCount !== 1 ? "s" : ""}
                     </span>
+                    <button
+                      onClick={() => setEditing(role)}
+                      title="Edit role & permissions"
+                      className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
                     {!role.isSystem && (
                       <button
                         onClick={() => handleDeleteRole(role)}
@@ -184,6 +272,16 @@ export function RolesClient({ initial }: { initial: RoleRow[] }) {
           onClose={() => setNewRoleOpen(false)}
           onCreated={(r) => setRoles((prev) => [...prev, r])}
         />
+      </Modal>
+
+      <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing ? `Edit "${editing.name}"` : ""} description="Adjust this role's permission set. Changes take effect immediately for everyone holding the role." size="lg">
+        {editing && (
+          <EditRoleModal
+            role={editing}
+            onClose={() => setEditing(null)}
+            onSaved={(r) => setRoles((prev) => prev.map((x) => (x.id === r.id ? r : x)))}
+          />
+        )}
       </Modal>
     </div>
   );

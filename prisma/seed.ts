@@ -3,13 +3,34 @@ import bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 
-async function main() {
-  // ── Permissions ──────────────────────────────────────────────────────────
-  const resources = ["users", "roles", "groups", "services", "orgs", "api-keys", "apps", "settings", "audit", "dashboard"];
-  const actions   = ["read", "write", "delete", "admin"];
+const RESOURCES = ["users", "roles", "groups", "services", "orgs", "api-keys", "apps", "settings", "audit", "dashboard"];
+const ACTIONS = ["read", "write", "delete", "admin"];
 
-  for (const resource of resources) {
-    for (const action of actions) {
+type Pair = { resource: string; action: string };
+
+const all = (resource: string): Pair[] => ACTIONS.map((action) => ({ resource, action }));
+const read = (resources: string[]): Pair[] => resources.map((resource) => ({ resource, action: "read" }));
+const rw = (resources: string[]): Pair[] =>
+  resources.flatMap((resource) => [{ resource, action: "read" }, { resource, action: "write" }]);
+
+// Replace a role's entire permission set (idempotent reconcile).
+async function setRolePerms(roleId: string, pairs: Pair[]) {
+  const perms = pairs.length
+    ? await db.permission.findMany({ where: { OR: pairs.map((p) => ({ resource: p.resource, action: p.action })) }, select: { id: true } })
+    : [];
+  await db.rolePermission.deleteMany({ where: { roleId } });
+  if (perms.length) {
+    await db.rolePermission.createMany({
+      data: perms.map((p) => ({ roleId, permissionId: p.id })),
+      skipDuplicates: true,
+    });
+  }
+}
+
+async function main() {
+  // ── Permissions catalog (resource × action) ───────────────────────────────
+  for (const resource of RESOURCES) {
+    for (const action of ACTIONS) {
       await db.permission.upsert({
         where: { resource_action: { resource, action } },
         create: { resource, action },
@@ -18,62 +39,62 @@ async function main() {
     }
   }
 
-  // ── Roles ────────────────────────────────────────────────────────────────
-  const superAdmin = await db.role.upsert({
-    where: { name: "Super Admin" },
-    create: { name: "Super Admin", description: "Full unrestricted access to all platform resources.", isSystem: true },
-    update: {},
-  });
+  // ── Reconcile legacy role names → real role set ────────────────────────────
+  // Admin → Operations Manager, Support → Technician (no-ops on a fresh DB).
+  await db.role.updateMany({ where: { name: "Admin" }, data: { name: "Operations Manager" } });
+  await db.role.updateMany({ where: { name: "Support" }, data: { name: "Technician" } });
 
-  const admin = await db.role.upsert({
-    where: { name: "Admin" },
-    create: { name: "Admin", description: "Full access except role and permission management.", isSystem: true },
-    update: {},
-  });
+  // System roles (built-in, cannot be deleted). Descriptions are kept current.
+  const systemRoles: { name: string; description: string }[] = [
+    { name: "Super Admin",        description: "Break-glass: full unrestricted access to every resource and client." },
+    { name: "Operations Manager", description: "Full operational access to users, groups, services, orgs and apps — excludes role/permission management." },
+    { name: "Compliance Lead",    description: "Read-only oversight of security events, audit log, services and organizations across all clients." },
+    { name: "Technician",         description: "Operates service integrations (connect/sync) with read access to orgs, users and the dashboard." },
+    { name: "Client Executive",   description: "Client-facing: read-only dashboard access, scoped to that client's organization(s)." },
+    { name: "Read-Only",          description: "Internal read-only access to all resources across every client." },
+  ];
 
-  await db.role.upsert({
-    where: { name: "Support" },
-    create: { name: "Support", description: "Read access plus limited service interaction.", isSystem: true },
-    update: {},
-  });
-
-  await db.role.upsert({
-    where: { name: "Read-Only" },
-    create: { name: "Read-Only", description: "Read-only access to all non-sensitive resources.", isSystem: true },
-    update: {},
-  });
-
-  // Assign all permissions to Super Admin
-  const allPerms = await db.permission.findMany();
-  for (const perm of allPerms) {
-    await db.rolePermission.upsert({
-      where: { roleId_permissionId: { roleId: superAdmin.id, permissionId: perm.id } },
-      create: { roleId: superAdmin.id, permissionId: perm.id },
-      update: {},
+  const roles: Record<string, string> = {};
+  for (const r of systemRoles) {
+    const role = await db.role.upsert({
+      where: { name: r.name },
+      create: { name: r.name, description: r.description, isSystem: true },
+      update: { description: r.description, isSystem: true },
     });
+    roles[r.name] = role.id;
   }
 
-  // ── Default admin user ────────────────────────────────────────────────────
-  const passwordHash = await bcrypt.hash("Admin1234!", 12);
+  // ── Assign least-privilege permission sets ─────────────────────────────────
+  await setRolePerms(roles["Super Admin"], RESOURCES.flatMap(all));
+  await setRolePerms(roles["Operations Manager"], [
+    ...["users", "groups", "services", "orgs", "apps", "settings"].flatMap(all),
+    ...read(["audit", "dashboard"]),
+    { resource: "dashboard", action: "write" },
+  ]);
+  await setRolePerms(roles["Compliance Lead"], read(["audit", "services", "orgs", "dashboard", "apps"]));
+  await setRolePerms(roles["Technician"], [
+    ...rw(["services"]),
+    ...read(["orgs", "users", "dashboard", "apps"]),
+  ]);
+  await setRolePerms(roles["Client Executive"], [{ resource: "dashboard", action: "read" }]);
+  await setRolePerms(roles["Read-Only"], read(RESOURCES));
 
+  // ── Default admin user (Super Admin, global) ───────────────────────────────
+  const passwordHash = await bcrypt.hash("Admin1234!", 12);
   const adminUser = await db.user.upsert({
     where: { email: "admin@evendim.local" },
-    create: {
-      email:    "admin@evendim.local",
-      name:     "Platform Admin",
-      password: passwordHash,
-      isActive: true,
-    },
+    create: { email: "admin@evendim.local", name: "Platform Admin", password: passwordHash, isActive: true },
     update: {},
   });
 
-  await db.userRole.upsert({
-    where: { userId_roleId: { userId: adminUser.id, roleId: superAdmin.id } },
-    create: { userId: adminUser.id, roleId: superAdmin.id },
-    update: {},
+  const existingGrant = await db.userRole.findFirst({
+    where: { userId: adminUser.id, roleId: roles["Super Admin"], appId: null },
   });
+  if (!existingGrant) {
+    await db.userRole.create({ data: { userId: adminUser.id, roleId: roles["Super Admin"] } });
+  }
 
-  // ── Services ─────────────────────────────────────────────────────────────
+  // ── Services ───────────────────────────────────────────────────────────────
   const services = [
     { slug: "microsoft-365", name: "Microsoft 365",        category: "Identity / Licensing" },
     { slug: "halopsa",       name: "HaloPSA",               category: "PSA"                  },
@@ -87,36 +108,25 @@ async function main() {
     { slug: "pulseway",      name: "Pulseway",               category: "RMM / PSA"            },
     { slug: "cove",          name: "Cove Data Protection",   category: "Backup / Cloud"       },
   ];
-
   for (const svc of services) {
-    await db.service.upsert({
-      where: { slug: svc.slug },
-      create: svc,
-      update: {},
-    });
+    await db.service.upsert({ where: { slug: svc.slug }, create: svc, update: {} });
   }
 
   // ── Default settings ─────────────────────────────────────────────────────
   const defaults: Record<string, unknown> = {
-    "platform.name":          "Lake Evendim",
+    "platform.name":           "Lake Evendim",
     "polling.defaultInterval": 15,
-    "cache.ttl":              300,
+    "cache.ttl":               300,
     "security.sessionTimeout": 480,
-    "audit.retentionDays":    90,
+    "audit.retentionDays":     90,
   };
-
   for (const [key, value] of Object.entries(defaults)) {
-    await db.setting.upsert({
-      where: { key },
-      create: { key, value: value as never },
-      update: {},
-    });
+    await db.setting.upsert({ where: { key }, create: { key, value: value as never }, update: {} });
   }
 
   console.log("✅  Seed complete.");
   console.log("   Login: admin@evendim.local / Admin1234!");
-  console.log("   Roles: Super Admin, Admin, Support, Read-Only");
-  console.log("   Services: 11 connectors registered (M365, HaloPSA, NinjaRMM, ThreatLocker, Todyl, QuickBooks, Pax8, Datto, Auvik, Pulseway, Cove)");
+  console.log("   Roles: Super Admin, Operations Manager, Compliance Lead, Technician, Client Executive, Read-Only");
 }
 
 main()

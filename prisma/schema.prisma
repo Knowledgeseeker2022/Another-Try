@@ -57,6 +57,7 @@ model User {
   mfaEnabled    Boolean   @default(false)
   mfaSecret     String?   // TOTP secret, encrypted at rest
   isActive      Boolean   @default(true)
+  tokenVersion  Int       @default(0) // bumped to invalidate existing JWT sessions (deactivate/delete/role change)
   lastLoginAt   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -102,14 +103,48 @@ model RolePermission {
   @@id([roleId, permissionId])
 }
 
+// A grant: a user holds a role, optionally scoped to one app and a subset of client orgs.
+// appId null  = all apps (Admin-wide / global).
+// scopeAllOrgs = true = every client org; false = limited to the orgs / orgGroups listed below.
 model UserRole {
-  userId String
-  roleId String
+  id           String   @id @default(cuid())
+  userId       String
+  roleId       String
+  appId        String?
+  scopeAllOrgs Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role               @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  app       App?               @relation(fields: [appId], references: [id], onDelete: Cascade)
+  orgs      UserRoleOrg[]
+  orgGroups UserRoleOrgGroup[]
 
-  @@id([userId, roleId])
+  @@unique([userId, roleId, appId])
+  @@index([userId])
+  @@index([appId])
+}
+
+model UserRoleOrg {
+  userRoleId String
+  orgId      String
+
+  userRole     UserRole     @relation(fields: [userRoleId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([userRoleId, orgId])
+  @@index([orgId])
+}
+
+model UserRoleOrgGroup {
+  userRoleId String
+  orgGroupId String
+
+  userRole UserRole @relation(fields: [userRoleId], references: [id], onDelete: Cascade)
+  orgGroup OrgGroup @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
+
+  @@id([userRoleId, orgGroupId])
+  @@index([orgGroupId])
 }
 
 model Group {
@@ -133,14 +168,46 @@ model UserGroup {
   @@id([userId, groupId])
 }
 
+// A grant via group membership: same scope dimensions as UserRole.
 model GroupRole {
-  groupId String
-  roleId  String
+  id           String   @id @default(cuid())
+  groupId      String
+  roleId       String
+  appId        String?
+  scopeAllOrgs Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
-  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  role  Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  group     Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  role      Role                @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  app       App?                @relation(fields: [appId], references: [id], onDelete: Cascade)
+  orgs      GroupRoleOrg[]
+  orgGroups GroupRoleOrgGroup[]
 
-  @@id([groupId, roleId])
+  @@unique([groupId, roleId, appId])
+  @@index([groupId])
+  @@index([appId])
+}
+
+model GroupRoleOrg {
+  groupRoleId String
+  orgId       String
+
+  groupRole    GroupRole    @relation(fields: [groupRoleId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([groupRoleId, orgId])
+  @@index([orgId])
+}
+
+model GroupRoleOrgGroup {
+  groupRoleId String
+  orgGroupId  String
+
+  groupRole GroupRole @relation(fields: [groupRoleId], references: [id], onDelete: Cascade)
+  orgGroup  OrgGroup  @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
+
+  @@id([groupRoleId, orgGroupId])
+  @@index([orgGroupId])
 }
 
 // ─── Services / Integrations ──────────────────────────────────────────────────
@@ -218,6 +285,8 @@ model Organization {
   tickets        Ticket[]
   securityEvents SecurityEvent[]
   cloudUsers     CloudUser[]
+  userRoleScopes  UserRoleOrg[]  // grants limited to this org
+  groupRoleScopes GroupRoleOrg[]
 }
 
 model OrgMapping {
@@ -246,6 +315,8 @@ model OrgGroup {
   updatedAt   DateTime @updatedAt
 
   members OrgGroupMember[]
+  userRoleScopes  UserRoleOrgGroup[]  // grants limited to this org group
+  groupRoleScopes GroupRoleOrgGroup[]
 }
 
 model OrgGroupMember {
@@ -320,6 +391,9 @@ model App {
   metadata    Json?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  userRoles  UserRole[]  // role grants scoped to this app
+  groupRoles GroupRole[]
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

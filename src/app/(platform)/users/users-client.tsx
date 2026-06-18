@@ -7,9 +7,20 @@ import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { DataTable } from "@/components/shared/data-table";
 import { Modal } from "@/components/ui/modal";
+import { GrantsEditor, type GrantDraft } from "@/components/shared/grants-editor";
 import { formatRelativeTime } from "@/lib/utils";
 
-interface RoleOption { id: string; name: string; }
+interface Named { id: string; name: string; }
+
+interface UserGrant {
+  id: string;
+  appId: string | null;
+  scopeAllOrgs: boolean;
+  role: { id: string; name: string };
+  app: { id: string; name: string } | null;
+  orgs: { orgId: string }[];
+  orgGroups: { orgGroupId: string }[];
+}
 
 interface UserRow {
   id: string;
@@ -19,7 +30,21 @@ interface UserRow {
   mfaEnabled: boolean;
   lastLoginAt: string | null;
   createdAt: string;
-  userRoles: { role: { id: string; name: string } }[];
+  userRoles: UserGrant[];
+}
+
+// Shared reference data for the scope pickers, loaded once per modal.
+interface RefData { roles: Named[]; apps: Named[]; orgs: Named[]; orgGroups: Named[]; }
+
+async function loadRefData(): Promise<RefData> {
+  const [roles, apps, orgs, orgGroups] = await Promise.all([
+    fetch("/api/roles").then((r) => (r.ok ? r.json() : [])),
+    fetch("/api/apps").then((r) => (r.ok ? r.json() : [])),
+    fetch("/api/orgs").then((r) => (r.ok ? r.json() : [])),
+    fetch("/api/org-groups").then((r) => (r.ok ? r.json() : [])),
+  ]);
+  const pick = (arr: { id: string; name: string }[]) => arr.map((x) => ({ id: x.id, name: x.name }));
+  return { roles: pick(roles), apps: pick(apps), orgs: pick(orgs), orgGroups: pick(orgGroups) };
 }
 
 function Avatar({ name, email }: { name: string | null; email: string }) {
@@ -33,16 +58,12 @@ function Avatar({ name, email }: { name: string | null; email: string }) {
 }
 
 function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (u: UserRow) => void }) {
-  const [form, setForm] = useState({ email: "", name: "", password: "", roleId: "" });
-  const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [form, setForm] = useState({ email: "", name: "", password: "" });
+  const [grants, setGrants] = useState<GrantDraft[]>([]);
+  const [ref, setRef] = useState<RefData>({ roles: [], apps: [], orgs: [], orgGroups: [] });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/roles")
-      .then((r) => r.ok ? r.json() : [])
-      .then((data: { id: string; name: string }[]) => setRoles(data.map((r) => ({ id: r.id, name: r.name }))))
-      .catch(() => {});
-  }, []);
+  useEffect(() => { loadRefData().then(setRef).catch(() => {}); }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,7 +73,12 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: form.email, name: form.name || undefined, password: form.password || undefined, roleId: form.roleId || undefined }),
+        body: JSON.stringify({
+          email: form.email,
+          name: form.name || undefined,
+          password: form.password || undefined,
+          grants: grants.filter((g) => g.roleId),
+        }),
       });
       if (!res.ok) {
         const err = await res.json() as { error?: string };
@@ -98,15 +124,8 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         <p className="text-[11px] text-muted-foreground">The user will log in with this password.</p>
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-foreground">Role <span className="text-muted-foreground font-normal">(optional)</span></label>
-        <select
-          value={form.roleId}
-          onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-          className="h-9 px-3 rounded-lg bg-input border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="">No role assigned</option>
-          {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
+        <label className="text-xs font-medium text-foreground">Role grants <span className="text-muted-foreground font-normal">(optional — least privilege by default)</span></label>
+        <GrantsEditor {...ref} value={grants} onChange={setGrants} />
       </div>
       <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/20 border border-border/50 text-xs text-muted-foreground">
         <Mail className="w-3.5 h-3.5 shrink-0" />
@@ -126,23 +145,20 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 function EditUserModal({ user, onClose, onSaved, onDeleted }: { user: UserRow; onClose: () => void; onSaved: (u: UserRow) => void; onDeleted: (id: string) => void }) {
   const [name, setName] = useState(user.name ?? "");
   const [isActive, setIsActive] = useState(user.isActive);
-  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>(user.userRoles.map((r) => r.role.id));
-  const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [grants, setGrants] = useState<GrantDraft[]>(
+    user.userRoles.map((ur) => ({
+      roleId: ur.role.id,
+      appId: ur.appId,
+      scopeAllOrgs: ur.scopeAllOrgs,
+      orgIds: ur.orgs.map((o) => o.orgId),
+      orgGroupIds: ur.orgGroups.map((o) => o.orgGroupId),
+    })),
+  );
+  const [ref, setRef] = useState<RefData>({ roles: [], apps: [], orgs: [], orgGroups: [] });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/roles")
-      .then((r) => r.ok ? r.json() : [])
-      .then((data: { id: string; name: string }[]) => setRoles(data.map((r) => ({ id: r.id, name: r.name }))))
-      .catch(() => {});
-  }, []);
-
-  function toggleRole(id: string) {
-    setSelectedRoleIds((prev) =>
-      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
-    );
-  }
+  useEffect(() => { loadRefData().then(setRef).catch(() => {}); }, []);
 
   async function handleDelete() {
     if (!confirm(`Delete user "${user.email}"? This cannot be undone.`)) return;
@@ -170,7 +186,7 @@ function EditUserModal({ user, onClose, onSaved, onDeleted }: { user: UserRow; o
       const res = await fetch(`/api/users/${user.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() || null, isActive, roleIds: selectedRoleIds }),
+        body: JSON.stringify({ name: name.trim() || null, isActive, grants: grants.filter((g) => g.roleId) }),
       });
       if (!res.ok) {
         const err = await res.json() as { error?: string };
@@ -190,7 +206,6 @@ function EditUserModal({ user, onClose, onSaved, onDeleted }: { user: UserRow; o
 
   return (
     <div className="space-y-5">
-      {/* Identity */}
       <div className="flex items-center gap-3 pb-4 border-b border-border">
         <Avatar name={user.name} email={user.email} />
         <div>
@@ -210,7 +225,7 @@ function EditUserModal({ user, onClose, onSaved, onDeleted }: { user: UserRow; o
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-foreground">Account Status</p>
-          <p className="text-xs text-muted-foreground">Inactive users cannot log in</p>
+          <p className="text-xs text-muted-foreground">Inactive users cannot log in; deactivating ends any active session immediately</p>
         </div>
         <button
           type="button" onClick={() => setIsActive(!isActive)}
@@ -222,22 +237,8 @@ function EditUserModal({ user, onClose, onSaved, onDeleted }: { user: UserRow; o
       </div>
 
       <div>
-        <p className="text-xs font-medium text-foreground mb-2">Assigned Roles</p>
-        <div className="space-y-1.5">
-          {roles.map((role) => {
-            const selected = selectedRoleIds.includes(role.id);
-            return (
-              <button
-                key={role.id} type="button" onClick={() => toggleRole(role.id)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm transition-colors ${selected ? "bg-primary/10 border-primary/30 text-primary" : "bg-muted/10 border-border text-muted-foreground hover:border-border/80 hover:bg-muted/20"}`}
-              >
-                <span className="font-medium">{role.name}</span>
-                {selected && <CheckCircle2 className="w-3.5 h-3.5" />}
-              </button>
-            );
-          })}
-          {roles.length === 0 && <p className="text-xs text-muted-foreground">Loading roles…</p>}
-        </div>
+        <p className="text-xs font-medium text-foreground mb-2">Role grants <span className="text-muted-foreground font-normal">(role · app scope · client scope)</span></p>
+        <GrantsEditor {...ref} value={grants} onChange={setGrants} />
       </div>
 
       <div className="flex items-center gap-2">
@@ -276,7 +277,7 @@ export function UsersClient({ initial }: { initial: UserRow[] }) {
 
   const active     = users.filter((u) => u.isActive).length;
   const mfaCount   = users.filter((u) => u.mfaEnabled).length;
-  const adminCount = users.filter((u) => u.userRoles.some((r) => r.role.name.includes("Admin"))).length;
+  const privileged = users.filter((u) => u.userRoles.some((r) => r.role.name === "Super Admin")).length;
 
   const columns = [
     {
@@ -296,11 +297,15 @@ export function UsersClient({ initial }: { initial: UserRow[] }) {
       render: (u: UserRow) => (
         <div className="flex flex-wrap gap-1">
           {u.userRoles.length > 0 ? (
-            u.userRoles.map((r) => (
-              <span key={r.role.id} className="text-xs font-medium text-foreground bg-muted/40 border border-border/50 rounded px-2 py-0.5">
-                {r.role.name}
-              </span>
-            ))
+            u.userRoles.map((r) => {
+              const scoped = !r.scopeAllOrgs || r.appId !== null;
+              return (
+                <span key={r.id} className="text-xs font-medium text-foreground bg-muted/40 border border-border/50 rounded px-2 py-0.5">
+                  {r.role.name}
+                  {scoped && <span className="ml-1 text-[10px] text-amber-400" title="Scoped grant">●</span>}
+                </span>
+              );
+            })
           ) : (
             <span className="text-xs text-muted-foreground">No role</span>
           )}
@@ -355,7 +360,7 @@ export function UsersClient({ initial }: { initial: UserRow[] }) {
             { label: "Total Users",  value: users.length },
             { label: "Active",       value: active       },
             { label: "MFA Enabled",  value: mfaCount     },
-            { label: "Admins",       value: adminCount   },
+            { label: "Super Admins", value: privileged   },
           ].map((item) => (
             <div key={item.label} className="rounded-lg border border-border bg-card p-4">
               <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -369,17 +374,17 @@ export function UsersClient({ initial }: { initial: UserRow[] }) {
           emptyMessage="No users found."
           onRowClick={(u) => setEditUser(u)}
         />
-        <p className="text-xs text-muted-foreground">Click a user row to edit details and manage roles.</p>
+        <p className="text-xs text-muted-foreground">Click a user row to edit details and manage role grants.</p>
       </div>
 
-      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite User" description="Create a new platform user and optionally assign a role." size="sm">
+      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite User" description="Create a new platform user and grant roles (scoped by app and client)." size="md">
         <InviteModal
           onClose={() => setInviteOpen(false)}
           onCreated={(u) => setUsers((prev) => [u, ...prev])}
         />
       </Modal>
 
-      <Modal open={!!editUser} onClose={() => setEditUser(null)} title="Edit User" size="sm">
+      <Modal open={!!editUser} onClose={() => setEditUser(null)} title="Edit User" size="md">
         {editUser && (
           <EditUserModal
             user={editUser}
