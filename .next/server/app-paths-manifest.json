@@ -1,3 +1,9 @@
 {
-  "/(auth)/login/page": "app/(auth)/login/page.js"
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
+  "/(platform)/groups/page": "app/(platform)/groups/page.js",
+  "/(platform)/services/page": "app/(platform)/services/page.js",
+  "/(platform)/sso-setup/page": "app/(platform)/sso-setup/page.js",
+  "/(platform)/apps/page": "app/(platform)/apps/page.js",
+  "/(platform)/org-matching/page": "app/(platform)/org-matching/page.js",
+  "/(platform)/org-groups/page": "app/(platform)/org-groups/page.js"
 }
