@@ -3,6 +3,22 @@
 All notable changes to Lake Evendim are recorded here, newest first. One plain-language
 line per change. Dates are `YYYY-MM-DD`.
 
+## 2026-06-18 — Phase 2: real, enforced, multi-tenant SSO
+
+1. **Fixed the headline defect: SSO config now controls login.** Previously `SsoConfig` was written by the Admin UI but never read by `auth.ts` — all SSO behaviour came from static env vars only. `auth.ts` now queries `SsoTenant` at every Entra sign-in to validate the tenant, check domains, and enforce group mappings. Env vars still carry the shared QCT app credentials; the DB drives everything else.
+2. **Replaced the single-tenant `SsoConfig` model with multi-tenant `SsoTenant`.** One row per Entra tenant (QCT plus any number of client tenants). `tenantId` (the Entra `tid` JWT claim) is the verified trust anchor — `NOT NULL UNIQUE`. Email domain is a secondary check only. Per-tenant `clientId`/`clientSecret` fields are nullable escape hatches; by default all tenants use the shared QCT Entra app credentials from env vars.
+3. **Added `SsoGroupMapping`: Entra group → Lake Evendim Group.** Maps an Entra group object ID (immutable trust anchor) to a Lake Evendim `Group`, which carries `GroupRole` grants via the Phase 1 RBAC system. Removing a mapping removes access on the user's next login. No new permission system — SSO plugs directly into Phase 1's `resolveGrants()` path.
+4. **Default-deny enforced.** An authenticated SSO user whose Entra groups match no mapping gets `false` from `signIn` and never receives a session. No fallback role, no default dashboard access.
+5. **Group overage detection.** When Entra emits a `_claim_names.groups` overage indicator (>200 groups), auth.ts automatically falls back to a Microsoft Graph `GET /me/memberOf` call using the delegated access token. No silent data loss on large tenants.
+6. **SSO-provisioned group memberships written to DB.** On each successful Entra sign-in, `UserGroup` rows with `ssoProvisioned: true` are synced: stale mappings removed, current ones added. Manually-assigned memberships (`ssoProvisioned: false`) are never touched. Removing a group mapping drops access on next login, consistent with Phase 1 `tokenVersion` revocation behaviour.
+7. **Login form now hides the Microsoft button when SSO is unavailable.** A new public `/api/sso/status` endpoint returns `{ ssoEnabled }` based on live DB state and env-var presence. The button only appears when both conditions are met — no more click-into-guaranteed-failure path.
+8. **Admin consent URL generated per tenant.** The SSO UI computes and surfaces the tenant-specific admin consent URL (`login.microsoftonline.com/{tenantId}/adminconsent?...`) for client onboarding.
+9. **`clientSecret` now encrypted.** SSO tenant secrets are encrypted with AES-256-GCM via `crypto.ts` when `ENCRYPTION_KEY` is set (matching the service-credentials pattern). Added `encryptString`/`decryptString` helpers to `crypto.ts`.
+10. **`sso` added as a permission resource** (`read/write/delete/admin`). Super Admin and Operations Manager receive full SSO permissions. Added to the catalog, all six roles reconciled.
+11. **Adopted Prisma migration for Phase 2.** Migration `20260618200000_phase2_sso_tenant` renames `SsoConfig` → `SsoTenant`, hardens `tenantId` to `NOT NULL UNIQUE`, creates `SsoGroupMapping`, adds `ssoProvisioned`/`ssoTenantId` to `UserGroup`. Any existing `SsoConfig` row with a null `tenantId` is deleted (it cannot be a valid trust anchor).
+12. Audit-logged all SSO tenant create/update/delete and group mapping create/delete operations.
+13. `src/middleware.ts` updated: `/api/sso/status` is now a public path (called unauthenticated by the login form).
+
 ## 2026-06-18 — Phase 1: complete, scoped access model (Users / Roles / Groups)
 
 1. **RBAC is now actually enforced.** Previously every admin API only checked "are you logged in" — any signed-in user could do anything. Added a `can()` / `requirePermission()` authorization layer (`src/lib/authz.ts`) and wired it into the users, roles, groups, and permissions APIs (resource × action).

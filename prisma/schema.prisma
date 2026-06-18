@@ -154,18 +154,22 @@ model Group {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  userGroups UserGroup[]
-  groupRoles GroupRole[]
+  userGroups  UserGroup[]
+  groupRoles  GroupRole[]
+  ssoMappings SsoGroupMapping[]
 }
 
 model UserGroup {
-  userId  String
-  groupId String
+  userId         String
+  groupId        String
+  ssoProvisioned Boolean @default(false) // true = written by SSO login sync; never delete manually-assigned rows
+  ssoTenantId    String?  // which SsoTenant provisioned this; used to clean up stale memberships on login
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@id([userId, groupId])
+  @@index([ssoTenantId])
 }
 
 // A grant via group membership: same scope dimensions as UserRole.
@@ -287,6 +291,7 @@ model Organization {
   cloudUsers     CloudUser[]
   userRoleScopes  UserRoleOrg[]  // grants limited to this org
   groupRoleScopes GroupRoleOrg[]
+  ssoTenants      SsoTenant[]    // client tenants whose users scope to this org
 }
 
 model OrgMapping {
@@ -329,20 +334,47 @@ model OrgGroupMember {
   @@id([orgId, orgGroupId])
 }
 
-// ─── SSO Configuration ────────────────────────────────────────────────────────
+// ─── SSO Configuration (multi-tenant) ────────────────────────────────────────
 
-model SsoConfig {
+// One row per Entra tenant (QCT internal + each client tenant).
+// tenantId is the verified trust anchor (Entra `tid` JWT claim) — NOT the email domain.
+// clientId/clientSecret are nullable: null = inherit QCT env-var app creds (default).
+// Per-tenant overrides are the escape hatch for clients requiring their own app registration.
+model SsoTenant {
   id           String   @id @default(cuid())
-  provider     String   // "microsoft-entra-id"
-  tenantId     String?
-  clientId     String?
-  clientSecret String?  // encrypted
-  domains      String[] // allowed email domains
+  provider     String   @default("microsoft-entra-id")
+  name         String   // display name, e.g. "QCT Internal" or client name
+  tenantId     String   @unique // Entra tid — NOT NULL; required before enabling
+  clientId     String?  // null = use AUTH_MICROSOFT_ENTRA_ID_ID env var
+  clientSecret String?  // encrypted via crypto.ts; null = use env var
+  domains      String[] // secondary check + Phase 3 client-matching signal
   isEnabled    Boolean  @default(false)
-  isDefault    Boolean  @default(false)
+  isDefault    Boolean  @default(false) // true = QCT's own tenant (only one)
+  orgId        String?  // FK to Organization; null for QCT's own tenant
   metadata     Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  organization  Organization?    @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  groupMappings SsoGroupMapping[]
+}
+
+// Maps an Entra group object ID → a Lake Evendim Group (which carries GroupRole grants).
+// entraGroupId is the trust anchor (immutable object ID), NOT the display name.
+// Removing this mapping removes SSO access for users in that Entra group on next login.
+model SsoGroupMapping {
+  id             String   @id @default(cuid())
+  ssoTenantId    String
+  entraGroupId   String   // Entra group object ID
+  entraGroupName String?  // informational display name only — can change in Entra
+  groupId        String   // FK to Group (Phase 1 RBAC: GroupRole grants resolve here)
+  createdAt      DateTime @default(now())
+
+  ssoTenant SsoTenant @relation(fields: [ssoTenantId], references: [id], onDelete: Cascade)
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([ssoTenantId, entraGroupId])
+  @@index([groupId])
 }
 
 // ─── API Keys ─────────────────────────────────────────────────────────────────

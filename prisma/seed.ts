@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 
-const RESOURCES = ["users", "roles", "groups", "services", "orgs", "api-keys", "apps", "settings", "audit", "dashboard"];
+const RESOURCES = ["users", "roles", "groups", "services", "orgs", "api-keys", "apps", "settings", "audit", "sso", "dashboard"];
 const ACTIONS = ["read", "write", "delete", "admin"];
 
 type Pair = { resource: string; action: string };
@@ -67,7 +67,7 @@ async function main() {
   // ── Assign least-privilege permission sets ─────────────────────────────────
   await setRolePerms(roles["Super Admin"], RESOURCES.flatMap(all));
   await setRolePerms(roles["Operations Manager"], [
-    ...["users", "groups", "services", "orgs", "apps", "settings"].flatMap(all),
+    ...["users", "groups", "services", "orgs", "apps", "settings", "sso"].flatMap(all),
     ...read(["audit", "dashboard"]),
     { resource: "dashboard", action: "write" },
   ]);

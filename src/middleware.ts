@@ -6,6 +6,7 @@ import { getToken } from "next-auth/jwt";
 const PUBLIC_PATHS = [
   "/login",
   "/api/auth",
+  "/api/sso/status", // Login form calls this before auth to decide whether to show SSO button
   "/api/data",       // API-key authenticated data endpoints for downstream dashboards
   "/api/webhooks",   // Webhook receivers — authenticated by HMAC signature in handler
   "/api/health",     // Uptime monitoring — no auth required

@@ -45,3 +45,13 @@ export function encryptionAvailable(): boolean {
   const hex = process.env.ENCRYPTION_KEY;
   return !!hex && hex.length === 64;
 }
+
+// Convenience wrappers for encrypting/decrypting a single string value
+// (e.g. SsoTenant.clientSecret). Wraps encryptConfig with a single-key object.
+export function encryptString(plaintext: string): string {
+  return encryptConfig({ v: plaintext });
+}
+
+export function decryptString(ciphertext: string): string {
+  return (decryptConfig(ciphertext) as { v: string }).v;
+}

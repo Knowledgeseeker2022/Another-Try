@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -24,6 +24,15 @@ export function LoginForm() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
+  // null = still checking; false = disabled/unavailable; true = show the button
+  const [ssoEnabled, setSsoEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/sso/status")
+      .then((r) => r.ok ? r.json() : { ssoEnabled: false })
+      .then((d: { ssoEnabled: boolean }) => setSsoEnabled(d.ssoEnabled))
+      .catch(() => setSsoEnabled(false));
+  }, []);
 
   async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
@@ -67,31 +76,35 @@ export function LoginForm() {
 
       {/* Card */}
       <div className="bg-card border border-border rounded-xl p-6 shadow-xl shadow-black/20">
-        {/* SSO */}
-        <button
-          type="button"
-          onClick={handleSSO}
-          disabled={ssoLoading}
-          className="w-full flex items-center justify-center gap-3 h-10 px-4 rounded-lg border border-border bg-muted/30 hover:bg-muted/60 text-foreground text-sm font-medium transition-colors disabled:opacity-60"
-        >
-          {ssoLoading ? (
-            <span className="w-4 h-4 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
-          ) : (
-            <svg viewBox="0 0 21 21" className="w-4 h-4" xmlns="http://www.w3.org/2000/svg">
-              <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
-              <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-              <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
-              <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
-            </svg>
-          )}
-          Continue with Microsoft
-        </button>
+        {/* SSO button — only shown when at least one tenant is enabled + env creds present */}
+        {ssoEnabled === true && (
+          <>
+            <button
+              type="button"
+              onClick={handleSSO}
+              disabled={ssoLoading}
+              className="w-full flex items-center justify-center gap-3 h-10 px-4 rounded-lg border border-border bg-muted/30 hover:bg-muted/60 text-foreground text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              {ssoLoading ? (
+                <span className="w-4 h-4 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
+              ) : (
+                <svg viewBox="0 0 21 21" className="w-4 h-4" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                  <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                  <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                </svg>
+              )}
+              Continue with Microsoft
+            </button>
 
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px bg-border" />
-          <span className="text-xs text-muted-foreground">or sign in with password</span>
-          <div className="flex-1 h-px bg-border" />
-        </div>
+            <div className="flex items-center gap-3 my-5">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">or sign in with password</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+          </>
+        )}
 
         {/* Credentials form */}
         <form onSubmit={handleCredentials} className="flex flex-col gap-4">
