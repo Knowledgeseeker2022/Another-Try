@@ -61,7 +61,7 @@ export function LoginForm() {
         </div>
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Lake Evendim</h1>
-          <p className="text-sm text-muted-foreground mt-1">Bedrock Admin Control Plane</p>
+          <p className="text-sm text-muted-foreground mt-1">Admin Control Plane</p>
         </div>
       </div>
 

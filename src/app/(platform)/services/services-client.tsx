@@ -555,7 +555,7 @@ export function ServicesClient({ initial }: { initial: DbService[] }) {
           title={modalMode === "connect" ? `Connect ${modalService.name}` : `${modalService.name} Settings`}
           description={
             modalMode === "connect"
-              ? "Enter your API credentials to begin syncing data into Bedrock."
+              ? "Enter your API credentials to begin syncing data into Lake Evendim."
               : "Update credentials or adjust sync settings."
           }
           size="md"

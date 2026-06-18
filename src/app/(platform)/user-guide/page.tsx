@@ -22,9 +22,9 @@ const SECTIONS: { title: string; articles: Article[] }[] = [
     articles: [
       {
         title: "What is Lake Evendim?",
-        desc: "Overview of the platform, its role in the Bedrock data lake architecture, and how it connects to your MSP tools.",
+        desc: "Overview of the platform, its role in the Lake Evendim data lake architecture, and how it connects to your MSP tools.",
         blocks: [
-          { type: "para", text: "Lake Evendim is the admin control plane for your Bedrock data lake. It connects your MSP tools — PSA, RMM, security platforms, licensing systems, and accounting — into a single normalized data store." },
+          { type: "para", text: "Lake Evendim is the admin control plane for your data lake. It connects your MSP tools — PSA, RMM, security platforms, licensing systems, and accounting — into a single normalized data store." },
           { type: "heading", text: "What it does" },
           { type: "list", items: [
             "Pulls data from connected services (HaloPSA, M365, Todyl, NinjaRMM, etc.) on a configurable schedule or via webhooks",
@@ -32,7 +32,7 @@ const SECTIONS: { title: string; articles: Article[] }[] = [
             "Matches clients across different systems into a single Organization record",
             "Exposes all data via authenticated API endpoints for your downstream dashboards and tools",
           ]},
-          { type: "heading", text: "How it fits into Bedrock" },
+          { type: "heading", text: "How it fits into Lake Evendim" },
           { type: "para", text: "Lake Evendim is the data ingestion and normalization layer. Other dashboards (reporting, billing, security ops) query its API using API keys rather than connecting directly to each source system. This means you change credentials in one place and all downstream tools stay connected." },
         ],
       },
@@ -110,7 +110,7 @@ const SECTIONS: { title: string; articles: Article[] }[] = [
     articles: [
       {
         title: "Org Matching Explained",
-        desc: "How Bedrock maps clients across HaloPSA, NinjaRMM, Pax8, and other systems into a single normalized record.",
+        desc: "How Lake Evendim maps clients across HaloPSA, NinjaRMM, Pax8, and other systems into a single normalized record.",
         blocks: [
           { type: "para", text: "Every MSP tool has its own client list. HaloPSA calls them 'clients,' NinjaRMM calls them 'customers,' Pax8 calls them 'companies.' The same real-world client exists in 4-5 systems with slightly different names." },
           { type: "heading", text: "The problem it solves" },
@@ -268,7 +268,7 @@ const SECTIONS: { title: string; articles: Article[] }[] = [
       },
       {
         title: "API Keys for Your Apps",
-        desc: "How to generate and use API keys to access Bedrock data from your applications.",
+        desc: "How to generate and use API keys to access Lake Evendim data from your applications.",
         blocks: [
           { type: "heading", text: "Generating a key" },
           { type: "list", items: [
@@ -365,7 +365,7 @@ export default function UserGuidePage() {
           <div>
             <h2 className="text-base font-semibold text-foreground">Welcome to Lake Evendim</h2>
             <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-              Lake Evendim is the admin control plane for your Bedrock data lake. Click any article below to read the full documentation.
+              Lake Evendim is the admin control plane for your data lake. Click any article below to read the full documentation.
             </p>
           </div>
         </div>

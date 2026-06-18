@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     default: "Lake Evendim",
     template: "%s · Lake Evendim",
   },
-  description: "Bedrock data lake admin control plane — unified API aggregation and management platform",
+  description: "Lake Evendim data lake admin control plane — unified API aggregation and management platform",
   icons: { icon: "/favicon.ico" },
 };
 

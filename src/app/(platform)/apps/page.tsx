@@ -160,7 +160,7 @@ export default function AppsPage() {
     <div className="flex flex-col h-full">
       <PageHeader
         title="Apps"
-        subtitle="Application registry — internal and client-facing apps consuming Bedrock data"
+        subtitle="Application registry — internal and client-facing apps consuming Lake Evendim data"
         actions={
           <button onClick={() => setRegisterOpen(true)} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors">
             <Plus className="w-3.5 h-3.5" /> Register App
@@ -177,7 +177,7 @@ export default function AppsPage() {
           <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
             <AppWindow className="w-8 h-8 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">No apps registered yet.</p>
-            <p className="text-xs text-muted-foreground/70">Register internal tools or client-facing apps that consume Bedrock data via the API.</p>
+            <p className="text-xs text-muted-foreground/70">Register internal tools or client-facing apps that consume Lake Evendim data via the API.</p>
             <button onClick={() => setRegisterOpen(true)} className="flex items-center gap-1.5 h-7 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
               <Plus className="w-3 h-3" /> Register App
             </button>
@@ -230,7 +230,7 @@ export default function AppsPage() {
         )}
       </div>
 
-      <Modal open={registerOpen} onClose={() => setRegisterOpen(false)} title="Register Application" description="Add an app to the registry so it can access Bedrock data via the API." size="md">
+      <Modal open={registerOpen} onClose={() => setRegisterOpen(false)} title="Register Application" description="Add an app to the registry so it can access Lake Evendim data via the API." size="md">
         <RegisterModal onClose={() => setRegisterOpen(false)} onCreated={(a) => setApps((prev) => [...prev, a])} />
       </Modal>
     </div>
