@@ -3,6 +3,28 @@
 All notable changes to Lake Evendim are recorded here, newest first. One plain-language
 line per change. Dates are `YYYY-MM-DD`.
 
+## 2026-06-19 — Phase 3: Clients + canonical identity + match engine
+
+1. **"Organizations" category renamed to "Clients" throughout the UI.** Sidebar, page headers, and all copy now say "Clients" and "Client Groups." Schema model names (`Organization`, `OrgMapping`, etc.) are unchanged — a wide migration for zero runtime gain. `/org-matching` redirects permanently to the new `/clients` route.
+2. **Layered deterministic matching engine** (`src/lib/org-matcher.ts`). Three matchers run in priority order: (1) verified Entra tenant ID from `SsoTenant` (confidence 100 → auto-link), (2) verified domain from `SsoTenant.domains` (confidence 90 → auto-link), (3) normalized name after stripping legal suffixes (confidence 70 → review queue). Below 65: leave unmatched. AI-assisted fuzzy matching can later feed the same review queue.
+3. **`Organization.domain String?` widened to `domains String[]`.** Supports multi-domain clients and is used as a matching signal by the engine.
+4. **`Organization.segment String?` added.** Stores the client's segment ("Financial", "Federal Contractors", "Health", etc.) for Phase 4 org-group auto-assignment.
+5. **New `OrgMatchSuggestion` model and review queue.** The engine enqueues middle-band matches (confidence 65–89) for one-click human review. `@@unique([serviceSlug, externalId])` guarantees one live suggestion per external entity. `REJECTED` suppresses re-suggestion forever.
+6. **Confirming a suggestion triggers immediate backfill — not "on next sync."** Confirm and backfill run in a single Postgres transaction (`db.$transaction`, 30 s timeout): OrgMapping is created, suggestion transitions to CONFIRMED, and all existing `Ticket` / `SecurityEvent` / `CloudUser` records belonging to that external entity have `orgId` stamped atomically. Fails fully or succeeds fully.
+7. **`orgMappingId String?` added to `Ticket`, `SecurityEvent`, `CloudUser`.** Tracks which OrgMapping set each record's `orgId`. Connector upserts never touch this column; only backfill writes it. Enables precise split reversal.
+8. **Split/reject reversal.** `DELETE /api/clients/[id]/mappings/[mappingId]` deletes the mapping, nulls out `orgId` + `orgMappingId` on exactly the backfilled records (no other mappings' records touched), and upserts a `REJECTED` suggestion so the pair is never re-suggested. Runs in the same transaction.
+9. **New `OrgDomainAuth` model.** Four rows per client (`IDENTITY`, `VULNERABILITY`, `COMPLIANCE`, `OPERATIONS`), each with status `UNKNOWN` (awaiting authorization) / `AUTHORIZED` / `NOT_AUTHORIZED`. `UNKNOWN` is visually and logically distinct from a pass or fail, and will be excluded from Phase 4 health scoring. Rows seeded in migration for all existing orgs; created lazily for new orgs.
+10. **M365 connector now uses the matching engine.** Replaced the single `Organization.domain` string lookup with `resolveOrgMapping()` keyed on Entra `tenantId`, producing a proper `OrgMapping` with `matcherKey` and `wasAutoLinked`.
+11. **Todyl connector now uses the matching engine.** Per-alert `tenant_id` resolution replaces the direct `OrgMapping` lookup; new tenants generate suggestions instead of silently dropping `orgId`.
+12. **HaloPSA stays as source-of-truth.** Its `OrgMapping` upserts now stamp `matcherKey: "halopsa_source"` and `wasAutoLinked: false`.
+13. **`OrgMapping` gets `matcherKey` and `wasAutoLinked`.** `wasAutoLinked: true` flags engine-created auto-links so the UI can surface a split button.
+14. **New Clients UI** (`/clients`). Shows all canonical clients with: segment badge, domain list, mapping count, domain auth summary (N/4 authorized), and a pending-suggestions badge. Review queue at top for one-click confirm/reject. Client profile drawer: editable fields, per-domain auth grid (click to cycle status), service mappings with split button for auto-links.
+15. **New API surface** (all require `orgs:read` or `orgs:write`): `GET|POST /api/clients`, `GET|PATCH|DELETE /api/clients/[id]`, `GET /api/clients/[id]/domain-auth`, `PATCH /api/clients/[id]/domain-auth/[domain]`, `DELETE /api/clients/[id]/mappings/[mappingId]`, `GET /api/match-suggestions`, `POST /api/match-suggestions/[id]/confirm`, `POST /api/match-suggestions/[id]/reject`.
+16. Audit-logged all confirm, reject, split, domain-auth, and client CRUD operations.
+
+All notable changes to Lake Evendim are recorded here, newest first. One plain-language
+line per change. Dates are `YYYY-MM-DD`.
+
 ## 2026-06-18 — Phase 2: real, enforced, multi-tenant SSO
 
 1. **Fixed the headline defect: SSO config now controls login.** Previously `SsoConfig` was written by the Admin UI but never read by `auth.ts` — all SSO behaviour came from static env vars only. `auth.ts` now queries `SsoTenant` at every Entra sign-in to validate the tenant, check domains, and enforce group mappings. Env vars still carry the shared QCT app credentials; the DB drives everything else.

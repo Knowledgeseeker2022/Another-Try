@@ -32,10 +32,12 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { name, slug, domain, industry, tier } = await req.json();
+  const { name, slug, domain, industry, tier } = await req.json() as Record<string, string>;
   if (!name || !slug) return NextResponse.json({ error: "name and slug required" }, { status: 400 });
 
-  const org = await db.organization.create({ data: { name, slug, domain, industry, tier } });
+  const org = await db.organization.create({
+    data: { name, slug, domains: domain ? [domain] : [], industry, tier },
+  });
 
   await db.auditLog.create({
     data: {

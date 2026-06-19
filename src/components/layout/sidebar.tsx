@@ -45,9 +45,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Services",     href: "/services",     icon: Plug2,           group: "Integrations" },
   { label: "API Keys",     href: "/api-keys",     icon: Key,             group: "Integrations" },
   { label: "Apps",         href: "/apps",         icon: AppWindow,       group: "Integrations" },
-  // Organizations
-  { label: "Org Matching", href: "/org-matching", icon: Building2,       group: "Organizations" },
-  { label: "Org Groups",   href: "/org-groups",   icon: FolderKanban,    group: "Organizations" },
+  // Clients
+  { label: "Clients",       href: "/clients",    icon: Building2,    group: "Clients" },
+  { label: "Client Groups", href: "/org-groups", icon: FolderKanban, group: "Clients" },
   // Security
   { label: "Audit Log",    href: "/audit-log",    icon: ScrollText,      group: "Security" },
   // Docs
@@ -56,7 +56,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "SSO Setup",    href: "/sso-setup",    icon: KeySquare,       group: "Documentation" },
 ];
 
-const GROUPS = ["Platform", "Identity", "Integrations", "Organizations", "Security", "Documentation"];
+const GROUPS = ["Platform", "Identity", "Integrations", "Clients", "Security", "Documentation"];
 
 export function Sidebar() {
   const pathname = usePathname();

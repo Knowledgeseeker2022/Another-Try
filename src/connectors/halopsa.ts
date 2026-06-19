@@ -61,12 +61,12 @@ export class HaloPSAConnector implements Connector {
         const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
         const org = await db.organization.upsert({
           where: { slug },
-          create: { name: c.name, slug, domain: c.website ?? undefined },
+          create: { name: c.name, slug, domains: c.website ? [c.website] : [] },
           update: { name: c.name },
         });
         clientMap.set(c.id, org.id);
 
-        // Upsert OrgMapping
+        // Upsert OrgMapping — HaloPSA is the canonical source of truth for client list
         await db.orgMapping.upsert({
           where: { serviceSlug_externalId: { serviceSlug: "halopsa", externalId: String(c.id) } },
           create: {
@@ -76,6 +76,8 @@ export class HaloPSAConnector implements Connector {
             externalName: c.name,
             confidence: 100,
             isConfirmed: true,
+            matcherKey: "halopsa_source",
+            wasAutoLinked: false,
           },
           update: { externalName: c.name, orgId: org.id },
         });

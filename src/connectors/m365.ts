@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { graphPages, type Connector, type SyncResult } from "./base";
+import { resolveOrgMapping } from "@/lib/org-matcher";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 const TOKEN_URL = (tenantId: string) =>
@@ -62,17 +63,25 @@ export class M365Connector implements Connector {
       for (const sku of skuData.value ?? []) skuMap.set(sku.skuId, sku.skuPartNumber);
     }
 
-    // Try to match tenant to an Organization via domain
+    // Resolve tenant → canonical org via the matching engine.
+    // Use the Entra tenantId as externalId so OrgMapping is keyed on the verified tid.
     const domainRes = await fetch(`${GRAPH}/domains?$select=id,isDefault`, { headers });
-    let orgId: string | null = null;
+    let defaultDomain: string | undefined;
     if (domainRes.ok) {
       const domainData = (await domainRes.json()) as { value: { id: string; isDefault: boolean }[] };
-      const defaultDomain = domainData.value?.find((d) => d.isDefault)?.id;
-      if (defaultDomain) {
-        const org = await db.organization.findFirst({ where: { domain: defaultDomain } });
-        orgId = org?.id ?? null;
-      }
+      defaultDomain = domainData.value?.find((d) => d.isDefault)?.id;
     }
+
+    const orgId = await resolveOrgMapping(
+      {
+        serviceSlug: "microsoft-365",
+        externalId: tenantId,
+        externalName: defaultDomain ?? undefined,
+        domain: defaultDomain,
+        tenantId,
+      },
+      db,
+    );
 
     let recordsIn = 0;
     let recordsOut = 0;

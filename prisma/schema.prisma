@@ -62,12 +62,13 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
-  userRoles     UserRole[]
-  userGroups    UserGroup[]
-  apiKeys       ApiKey[]
-  auditLogs     AuditLog[]
+  accounts             Account[]
+  sessions             Session[]
+  userRoles            UserRole[]
+  userGroups           UserGroup[]
+  apiKeys              ApiKey[]
+  auditLogs            AuditLog[]
+  reviewedSuggestions  OrgMatchSuggestion[]
 }
 
 model Role {
@@ -275,7 +276,8 @@ model Organization {
   id          String    @id @default(cuid())
   name        String
   slug        String    @unique
-  domain      String?
+  domains     String[]  // replaces single domain — multi-domain matching
+  segment     String?   // "Financial", "Federal Contractors", "Health", "Law Firms" — Phase 4 grouping
   industry    String?
   tier        String?   // "standard", "professional", "enterprise"
   status      OrgStatus @default(ACTIVE)
@@ -284,28 +286,33 @@ model Organization {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  mappings       OrgMapping[]
-  orgGroups      OrgGroupMember[]
-  tickets        Ticket[]
-  securityEvents SecurityEvent[]
-  cloudUsers     CloudUser[]
-  userRoleScopes  UserRoleOrg[]  // grants limited to this org
-  groupRoleScopes GroupRoleOrg[]
-  ssoTenants      SsoTenant[]    // client tenants whose users scope to this org
+  mappings         OrgMapping[]
+  orgGroups        OrgGroupMember[]
+  tickets          Ticket[]
+  securityEvents   SecurityEvent[]
+  cloudUsers       CloudUser[]
+  userRoleScopes   UserRoleOrg[]
+  groupRoleScopes  GroupRoleOrg[]
+  ssoTenants       SsoTenant[]
+  domainAuths      OrgDomainAuth[]
+  matchSuggestions OrgMatchSuggestion[]
 }
 
 model OrgMapping {
-  id             String   @id @default(cuid())
-  orgId          String
-  serviceSlug    String   // e.g. "halopsa"
-  externalId     String   // ID in the external system
-  externalName   String?  // name as it appears in external system
-  confidence     Int      @default(100) // 0-100 match confidence
-  isConfirmed    Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String   @id @default(cuid())
+  orgId         String
+  serviceSlug   String
+  externalId    String
+  externalName  String?
+  confidence    Int      @default(100)
+  isConfirmed   Boolean  @default(false)
+  matcherKey    String?  // "entra_tid" | "verified_domain" | "domain" | "name" | "halopsa_source" | "manual"
+  wasAutoLinked Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization    Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  matchSuggestion OrgMatchSuggestion?
 
   @@unique([serviceSlug, externalId])
 }
@@ -332,6 +339,71 @@ model OrgGroupMember {
   orgGroup     OrgGroup     @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
 
   @@id([orgId, orgGroupId])
+}
+
+enum OrgSuggestionStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+enum DataDomain {
+  IDENTITY
+  VULNERABILITY
+  COMPLIANCE
+  OPERATIONS
+}
+
+enum DomainAuthStatus {
+  UNKNOWN
+  AUTHORIZED
+  NOT_AUTHORIZED
+}
+
+// One row per (serviceSlug, externalId) — the engine's candidate match queue.
+// PENDING = awaiting review; CONFIRMED = mapping created; REJECTED = suppressed forever.
+// @@unique ensures the same external entity never spawns duplicate suggestions.
+model OrgMatchSuggestion {
+  id            String              @id @default(cuid())
+  orgId         String
+  serviceSlug   String
+  externalId    String
+  externalName  String?
+  confidence    Int
+  matcherKey    String              // "entra_tid" | "verified_domain" | "domain" | "name"
+  matchEvidence Json?
+  status        OrgSuggestionStatus @default(PENDING)
+  orgMappingId  String?             @unique  // set on CONFIRMED — links to the created OrgMapping
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  reviewedBy   User?        @relation(fields: [reviewedById], references: [id], onDelete: SetNull)
+  orgMapping   OrgMapping?  @relation(fields: [orgMappingId], references: [id], onDelete: SetNull)
+
+  @@unique([serviceSlug, externalId])
+  @@index([orgId])
+  @@index([status])
+}
+
+// Per-client authorization for each data domain (IDENTITY, VULNERABILITY, COMPLIANCE, OPERATIONS).
+// UNKNOWN = awaiting client authorization — must be excluded from scoring.
+// AUTHORIZED / NOT_AUTHORIZED are both explicit states with different display treatment.
+model OrgDomainAuth {
+  id           String          @id @default(cuid())
+  orgId        String
+  domain       DataDomain
+  status       DomainAuthStatus @default(UNKNOWN)
+  authorizedAt DateTime?
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, domain])
 }
 
 // ─── SSO Configuration (multi-tenant) ────────────────────────────────────────
@@ -464,6 +536,7 @@ model Ticket {
   serviceSlug       String        // "halopsa"
   externalId        String
   orgId             String?
+  orgMappingId      String?       // set by backfill; tracks which OrgMapping assigned orgId
   title             String
   description       String?       @db.Text
   status            String        // "open", "pending", "closed", etc.
@@ -481,6 +554,7 @@ model Ticket {
 
   @@unique([serviceSlug, externalId])
   @@index([orgId])
+  @@index([orgMappingId])
   @@index([status])
   @@index([serviceSlug])
 }
@@ -490,6 +564,7 @@ model SecurityEvent {
   serviceSlug       String        // "todyl"
   externalId        String
   orgId             String?
+  orgMappingId      String?       // set by backfill; tracks which OrgMapping assigned orgId
   type              String        // "alert", "incident", "threat"
   severity          String        // "critical", "high", "medium", "low", "info"
   title             String
@@ -507,6 +582,7 @@ model SecurityEvent {
 
   @@unique([serviceSlug, externalId])
   @@index([orgId])
+  @@index([orgMappingId])
   @@index([severity])
   @@index([status])
   @@index([serviceSlug])
@@ -517,6 +593,7 @@ model CloudUser {
   serviceSlug       String        // "microsoft-365"
   externalId        String
   orgId             String?
+  orgMappingId      String?       // set by backfill; tracks which OrgMapping assigned orgId
   displayName       String?
   email             String?
   jobTitle          String?
@@ -534,6 +611,7 @@ model CloudUser {
 
   @@unique([serviceSlug, externalId])
   @@index([orgId])
+  @@index([orgMappingId])
   @@index([email])
   @@index([serviceSlug])
 }

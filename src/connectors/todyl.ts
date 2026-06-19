@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { type Connector, type SyncResult } from "./base";
+import { resolveOrgMapping } from "@/lib/org-matcher";
 
 // Todyl REST API — https://developer.todyl.com/
 // Auth: Bearer token via API key
@@ -70,13 +71,14 @@ export class TodylConnector implements Connector {
       for (const alert of alerts) {
         recordsIn++;
 
-        // Attempt to match tenant to an Organization via OrgMapping
+        // Resolve Todyl tenant → canonical org via the matching engine.
+        // Per-alert resolution is intentional: tenant_id varies per alert.
         let orgId: string | null = null;
         if (alert.tenant_id) {
-          const mapping = await db.orgMapping.findUnique({
-            where: { serviceSlug_externalId: { serviceSlug: "todyl", externalId: alert.tenant_id } },
-          });
-          orgId = mapping?.orgId ?? null;
+          orgId = await resolveOrgMapping(
+            { serviceSlug: "todyl", externalId: alert.tenant_id },
+            db,
+          );
         }
 
         await db.securityEvent.upsert({
