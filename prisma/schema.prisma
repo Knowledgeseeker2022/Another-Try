@@ -318,16 +318,18 @@ model OrgMapping {
 }
 
 model OrgGroup {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  color       String?  // hex color for badge
-  criteria    Json?    // auto-assignment rules
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String        @id @default(cuid())
+  name          String        @unique
+  description   String?
+  color         String?       // hex color for badge
+  mode          OrgGroupMode  @default(MANUAL)
+  ruleAttribute String?       // "segment" (future: "tier", "status", …)
+  ruleValue     String?       // e.g. "Financial", "Federal"
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   members OrgGroupMember[]
-  userRoleScopes  UserRoleOrgGroup[]  // grants limited to this org group
+  userRoleScopes  UserRoleOrgGroup[]
   groupRoleScopes GroupRoleOrgGroup[]
 }
 
@@ -339,6 +341,11 @@ model OrgGroupMember {
   orgGroup     OrgGroup     @relation(fields: [orgGroupId], references: [id], onDelete: Cascade)
 
   @@id([orgId, orgGroupId])
+}
+
+enum OrgGroupMode {
+  MANUAL
+  RULE_BASED
 }
 
 enum OrgSuggestionStatus {

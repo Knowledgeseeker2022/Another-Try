@@ -3,6 +3,20 @@
 All notable changes to Lake Evendim are recorded here, newest first. One plain-language
 line per change. Dates are `YYYY-MM-DD`.
 
+## 2026-06-19 — Phase 4: Client Groups — rule-based membership + controlled segments
+
+1. **`OrgGroupMode` enum added (`MANUAL` | `RULE_BASED`).** Each group now declares its membership mode. Existing groups default to `MANUAL` — no data migration needed.
+2. **Rule-based group membership computed on read, never persisted.** `OrgGroupMember` rows are MANUAL-only. Rule-based membership is a live query at read time (Prisma `findMany` where `segment = ruleValue`), which can never drift regardless of which code path writes `segment`. Eliminates an entire class of sync bug.
+3. **One mode per group, strictly enforced.** Manual additions to a RULE_BASED group return `400`. A client may belong to multiple groups of any mode. No ambiguity on what "remove" means.
+4. **`OrgGroup.criteria Json?` dropped.** The field was stored but never evaluated. Replaced by typed `ruleAttribute String?` + `ruleValue String?` columns — directly queryable, validated server-side, plain-language display derived deterministically.
+5. **`segment` field is now a controlled list.** Ten values enforced at the API boundary: Financial, Federal, Healthcare, Legal, Technology, Education, Nonprofit, Manufacturing, Professional Services, Retail. Defined once in `src/lib/client-segments.ts`; both the client profile dropdown and the group-rule picker read from the same export. Typo variants cannot fragment groups.
+6. **`src/lib/group-rules.ts` — rule evaluation library.** Exports `evaluateRule`, `getRuleGroupMembers`, `getRuleGroupMemberCount`, and `getClientGroups`. `getClientGroups` returns manual + rule-based groups for a client in a single call.
+7. **Client profile and list API (`/api/clients`, `/api/clients/[id]`) include rule-based group memberships.** `allGroups` field on every org response carries both MANUAL and RULE_BASED memberships with a `membershipType` discriminator. Segment PATCH validates against the controlled list.
+8. **New `/api/client-groups` route family.** `GET|POST /api/client-groups`, `GET|PATCH|DELETE /api/client-groups/[id]`, `GET|POST|DELETE /api/client-groups/[id]/members`. RULE_BASED groups return live `memberCount` from a COUNT query. Audit-logged: create, update, delete, member add/remove.
+9. **`/client-groups` page** — colored card grid with mode badge (amber "Rule-based" / gray "Manual"), plain-language rule summary ("Segment is Financial"), create/edit modal with mode toggle and segment dropdown, live member count. Member count on RULE_BASED cards is computed on each page load.
+10. **`/org-groups` redirects to `/client-groups`** — matching the Phase 3 `/org-matching` → `/clients` pattern. Sidebar link updated to point to `/client-groups`.
+11. **Groups page (`/groups`) uses `/api/client-groups`** for org-group ref data in the grants editor.
+
 ## 2026-06-19 — Phase 3: Clients + canonical identity + match engine
 
 1. **"Organizations" category renamed to "Clients" throughout the UI.** Sidebar, page headers, and all copy now say "Clients" and "Client Groups." Schema model names (`Organization`, `OrgMapping`, etc.) are unchanged — a wide migration for zero runtime gain. `/org-matching` redirects permanently to the new `/clients` route.

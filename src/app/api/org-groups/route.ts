@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { name, description, color, criteria } = await req.json();
+  const { name, description, color } = await req.json() as Record<string, string>;
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
 
   const group = await db.orgGroup.create({
@@ -26,7 +26,6 @@ export async function POST(req: Request) {
       name,
       description: description ?? null,
       color: color ?? "#6b7280",
-      criteria: criteria ? { rule: criteria } : undefined,
     },
   });
 

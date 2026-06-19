@@ -10,6 +10,7 @@ import {
   CheckCircle2, AlertTriangle, XCircle, Clock, Link2, Unlink2,
   ShieldCheck, Eye, Pencil, Trash2, ArrowRight,
 } from "lucide-react";
+import { SEGMENTS } from "@/lib/client-segments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -316,7 +317,7 @@ function ClientProfile({
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Profile</h3>
             <div className="grid grid-cols-2 gap-3">
-              {(["name", "segment", "domains", "tier", "industry"] as const).map((field) => (
+              {(["name", "domains", "tier", "industry"] as const).map((field) => (
                 <div key={field} className={field === "name" ? "col-span-2" : ""}>
                   <label className="text-xs text-muted-foreground capitalize">{field === "domains" ? "Domains (comma-separated)" : field}</label>
                   <input
@@ -326,6 +327,17 @@ function ClientProfile({
                   />
                 </div>
               ))}
+              <div>
+                <label className="text-xs text-muted-foreground">Segment</label>
+                <select
+                  value={form.segment}
+                  onChange={(e) => setForm((f) => ({ ...f, segment: e.target.value }))}
+                  className="mt-1 w-full h-8 px-2 rounded-md bg-input border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">— None —</option>
+                  {SEGMENTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
               <div className="col-span-2">
                 <label className="text-xs text-muted-foreground">Notes</label>
                 <textarea
@@ -485,7 +497,6 @@ function CreateClientModal({
     <form onSubmit={handleSubmit} className="space-y-4">
       {[
         { label: "Client Name", field: "name" as const, placeholder: "Acme Corporation", required: true },
-        { label: "Segment", field: "segment" as const, placeholder: "Financial / Healthcare / Federal…" },
         { label: "Domains (comma-separated)", field: "domains" as const, placeholder: "acme.com, acme.co.uk" },
       ].map(({ label, field, placeholder, required }) => (
         <div key={field} className="flex flex-col gap-1.5">
@@ -500,6 +511,17 @@ function CreateClientModal({
           />
         </div>
       ))}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-foreground">Segment</label>
+        <select
+          value={form.segment}
+          onChange={(e) => setForm((f) => ({ ...f, segment: e.target.value }))}
+          className="h-9 px-3 rounded-lg bg-input border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="">— None —</option>
+          {SEGMENTS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-foreground">Service Tier</label>
         <select

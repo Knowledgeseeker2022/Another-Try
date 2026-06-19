@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/authz";
 import { invalidateCache } from "@/lib/redis";
 import { ensureDomainAuths } from "@/lib/org-matcher";
+import { isValidSegment } from "@/lib/client-segments";
+import { getClientGroups } from "@/lib/group-rules";
 import type { OrgStatus, Prisma } from "@prisma/client";
 
 export async function GET(
@@ -35,7 +37,9 @@ export async function GET(
       ? await db.orgDomainAuth.findMany({ where: { orgId: id } })
       : org.domainAuths;
 
-  return NextResponse.json({ ...org, domainAuths });
+  const allGroups = await getClientGroups(org, db);
+
+  return NextResponse.json({ ...org, domainAuths, allGroups });
 }
 
 export async function PATCH(
@@ -63,6 +67,10 @@ export async function PATCH(
   if (body.tier     !== undefined) data.tier     = body.tier;
   if (body.status   !== undefined) data.status   = body.status;
   if (body.notes    !== undefined) data.notes    = body.notes;
+
+  if (body.segment !== undefined && body.segment !== null && !isValidSegment(body.segment)) {
+    return NextResponse.json({ error: "Invalid segment value" }, { status: 400 });
+  }
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });

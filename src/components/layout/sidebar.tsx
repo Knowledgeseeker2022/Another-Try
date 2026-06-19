@@ -47,7 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Apps",         href: "/apps",         icon: AppWindow,       group: "Integrations" },
   // Clients
   { label: "Clients",       href: "/clients",    icon: Building2,    group: "Clients" },
-  { label: "Client Groups", href: "/org-groups", icon: FolderKanban, group: "Clients" },
+  { label: "Client Groups", href: "/client-groups", icon: FolderKanban, group: "Clients" },
   // Security
   { label: "Audit Log",    href: "/audit-log",    icon: ScrollText,      group: "Security" },
   // Docs

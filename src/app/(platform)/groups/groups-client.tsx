@@ -38,7 +38,7 @@ async function loadRefData(): Promise<RefData> {
     fetch("/api/roles").then((r) => (r.ok ? r.json() : [])),
     fetch("/api/apps").then((r) => (r.ok ? r.json() : [])),
     fetch("/api/orgs").then((r) => (r.ok ? r.json() : [])),
-    fetch("/api/org-groups").then((r) => (r.ok ? r.json() : [])),
+    fetch("/api/client-groups").then((r) => (r.ok ? r.json() : [])),
   ]);
   const pick = (arr: { id: string; name: string }[]) => arr.map((x) => ({ id: x.id, name: x.name }));
   return { roles: pick(roles), apps: pick(apps), orgs: pick(orgs), orgGroups: pick(orgGroups) };

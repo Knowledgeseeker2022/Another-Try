@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/authz";
 import { invalidateCache } from "@/lib/redis";
 import { ensureDomainAuths } from "@/lib/org-matcher";
+import { isValidSegment } from "@/lib/client-segments";
+import { getClientGroups } from "@/lib/group-rules";
 
 export async function GET(req: Request) {
   const authz = await requirePermission("orgs", "read");
@@ -33,7 +35,15 @@ export async function GET(req: Request) {
     orderBy: { name: "asc" },
   });
 
-  return NextResponse.json(orgs);
+  // Augment each org with rule-based group memberships (computed on read).
+  const withGroups = await Promise.all(
+    orgs.map(async (org) => {
+      const allGroups = await getClientGroups(org, db);
+      return { ...org, allGroups };
+    }),
+  );
+
+  return NextResponse.json(withGroups);
 }
 
 export async function POST(req: Request) {
@@ -48,6 +58,9 @@ export async function POST(req: Request) {
   const { name, slug, segment, domains, industry, tier, notes } = body;
   if (!name?.trim() || !slug?.trim()) {
     return NextResponse.json({ error: "name and slug are required" }, { status: 400 });
+  }
+  if (segment && !isValidSegment(segment)) {
+    return NextResponse.json({ error: `Invalid segment. Valid values: ${["Financial","Federal","Healthcare","Legal","Technology","Education","Nonprofit","Manufacturing","Professional Services","Retail"].join(", ")}` }, { status: 400 });
   }
 
   const org = await db.organization.create({
