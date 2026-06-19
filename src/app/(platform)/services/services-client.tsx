@@ -5,12 +5,24 @@ import { toast } from "sonner";
 import {
   RefreshCw, Settings, AlertCircle, CheckCircle2, Clock,
   Plug, Database, ChevronRight, Unplug, Loader2, Link2,
+  TriangleAlert, CalendarClock,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Modal } from "@/components/ui/modal";
 import { SERVICE_META, type ServiceMeta } from "@/lib/service-config";
 import { formatRelativeTime } from "@/lib/utils";
+
+interface SyncLogSummary {
+  id: string;
+  status: string;
+  recordsIn: number;
+  recordsOut: number;
+  durationMs: number | null;
+  triggeredBy: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
 
 interface DbService {
   id: string;
@@ -22,8 +34,10 @@ interface DbService {
   lastSyncAt: string | null;
   nextSyncAt: string | null;
   pollInterval: number | null;
+  consecutiveFailures: number;
   errorMessage: string | null;
   hasCredentials: boolean;
+  latestLog: SyncLogSummary | null;
   _count?: { syncLogs: number };
 }
 
@@ -316,7 +330,17 @@ function ServiceCard({
         </p>
       </div>
 
-      {/* Error */}
+      {/* Escalated-error banner */}
+      {service.status === "ERROR" && service.consecutiveFailures >= 3 && (
+        <div className="mx-4 mb-1 flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2">
+          <TriangleAlert className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-xs text-amber-400 font-medium">
+            {service.consecutiveFailures} consecutive failures — manual check required
+          </p>
+        </div>
+      )}
+
+      {/* Error message */}
       {service.errorMessage && (
         <div className="mx-4 mb-3 flex items-start gap-2 rounded-md bg-red-500/8 border border-red-500/20 px-3 py-2">
           <AlertCircle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
@@ -324,13 +348,19 @@ function ServiceCard({
         </div>
       )}
 
-      {/* Stats (connected only) */}
-      {service.status === "CONNECTED" && (
+      {/* Stats */}
+      {(service.status === "CONNECTED" || service.status === "ERROR") && (
         <div className="px-4 pb-3 grid grid-cols-2 gap-2">
           {service.lastSyncAt && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-              <span>{formatRelativeTime(service.lastSyncAt)}</span>
+              <span>Last: {formatRelativeTime(service.lastSyncAt)}</span>
+            </div>
+          )}
+          {service.nextSyncAt && service.status === "CONNECTED" && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CalendarClock className="w-3 h-3" />
+              <span>Next: {formatRelativeTime(service.nextSyncAt)}</span>
             </div>
           )}
           {service.pollInterval && (
@@ -342,9 +372,31 @@ function ServiceCard({
           {service._count?.syncLogs !== undefined && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Database className="w-3 h-3" />
-              <span>{service._count.syncLogs} sync runs</span>
+              <span>{service._count.syncLogs} runs</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Latest sync run summary */}
+      {service.latestLog && service.latestLog.status !== "running" && (
+        <div className="mx-4 mb-3 rounded-md border border-border/50 bg-muted/10 px-3 py-2 space-y-0.5">
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-semibold uppercase tracking-wide ${
+              service.latestLog.status === "success" ? "text-emerald-400" : "text-red-400"
+            }`}>
+              {service.latestLog.status}
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {service.latestLog.triggeredBy === "scheduler" ? "Scheduled" : "Manual"}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+            <span>{service.latestLog.recordsIn} in · {service.latestLog.recordsOut} out</span>
+            {service.latestLog.durationMs != null && (
+              <span>{(service.latestLog.durationMs / 1000).toFixed(1)}s</span>
+            )}
+          </div>
         </div>
       )}
 
@@ -469,9 +521,9 @@ export function ServicesClient({ initial }: { initial: DbService[] }) {
     }
   }
 
-  const connected = services.filter((s) => s.status === "CONNECTED").length;
-  const errored   = services.filter((s) => s.status === "ERROR").length;
-  const warned    = services.filter((s) => s.status === "PENDING").length;
+  const connected  = services.filter((s) => s.status === "CONNECTED").length;
+  const errored    = services.filter((s) => s.status === "ERROR").length;
+  const escalated  = services.filter((s) => s.status === "ERROR" && s.consecutiveFailures >= 3).length;
 
   return (
     <div className="flex flex-col h-full">
@@ -504,6 +556,21 @@ export function ServicesClient({ initial }: { initial: DbService[] }) {
             </div>
           ))}
         </div>
+
+        {/* Escalation banner — shown above regular error banner when multiple consecutive failures */}
+        {escalated > 0 && (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/8 px-4 py-3">
+            <TriangleAlert className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-400">
+                {escalated} service{escalated > 1 ? "s" : ""} escalated — repeated failures, scheduler paused
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                These services have failed {3}+ consecutive syncs. Check the Audit Log for details, then Reconnect to reset.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Error banner */}
         {errored > 0 && (

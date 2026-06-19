@@ -8,7 +8,7 @@ export interface SyncResult {
 
 export interface Connector {
   readonly slug: string;
-  sync(config: Record<string, string>, db: PrismaClient): Promise<SyncResult>;
+  sync(config: Record<string, string>, db: PrismaClient, lastSyncAt?: Date): Promise<SyncResult>;
 }
 
 // Paginate a Microsoft Graph or similar API that returns { value: T[], "@odata.nextLink"?: string }
@@ -35,11 +35,17 @@ export async function* haloPSAPages<T>(
   path: string,
   headers: Record<string, string>,
   key: string,
-  pageSize = 100
+  pageSize = 100,
+  extraParams?: Record<string, string>
 ): AsyncGenerator<T[]> {
   let page = 1;
   while (true) {
-    const url = `${baseUrl}${path}?page_size=${pageSize}&page_no=${page}`;
+    const params = new URLSearchParams({
+      page_size: String(pageSize),
+      page_no: String(page),
+      ...extraParams,
+    });
+    const url = `${baseUrl}${path}?${params}`;
     const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(`HTTP ${res.status} from HaloPSA`);
     const data = (await res.json()) as Record<string, T[]>;

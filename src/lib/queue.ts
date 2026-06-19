@@ -39,12 +39,30 @@ export const syncQueue: Queue<SyncJobData> =
 if (process.env.NODE_ENV !== "production") globalForQueue.syncQueue = syncQueue;
 
 export async function queueSync(slug: string, userId?: string): Promise<string> {
+  // jobId is fixed per slug so BullMQ deduplicates: if an active job already exists,
+  // the new enqueue is dropped. The lock in processSync provides the runtime guard.
   const job = await syncQueue.add(
     `sync:${slug}`,
     { serviceSlug: slug, triggeredBy: userId },
-    { jobId: `sync:${slug}:${Date.now()}` }
+    { jobId: `active:${slug}` }
   );
   return job.id ?? "queued";
+}
+
+export async function upsertScheduler(slug: string, pollIntervalSeconds: number): Promise<void> {
+  await syncQueue.upsertJobScheduler(
+    `repeat:${slug}`,
+    { every: pollIntervalSeconds * 1000 },
+    {
+      name: `sync:${slug}`,
+      data: { serviceSlug: slug, triggeredBy: "scheduler" },
+      opts: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 50 } },
+    },
+  );
+}
+
+export async function removeScheduler(slug: string): Promise<void> {
+  await syncQueue.removeJobScheduler(`repeat:${slug}`);
 }
 
 export { makeBullConnectionOptions as makeBullConnection };

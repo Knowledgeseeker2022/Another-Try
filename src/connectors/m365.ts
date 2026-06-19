@@ -46,7 +46,7 @@ async function getAccessToken(tenantId: string, clientId: string, clientSecret: 
 export class M365Connector implements Connector {
   readonly slug = "microsoft-365";
 
-  async sync(config: Record<string, string>, db: PrismaClient): Promise<SyncResult> {
+  async sync(config: Record<string, string>, db: PrismaClient, _lastSyncAt?: Date): Promise<SyncResult> {
     const { tenantId, clientId, clientSecret } = config;
     if (!tenantId || !clientId || !clientSecret) {
       throw new Error("M365 requires tenantId, clientId, and clientSecret.");

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/authz";
-import { encryptString, encryptionAvailable } from "@/lib/crypto";
+import { encryptString } from "@/lib/crypto";
 
 // Shared shape returned for every tenant (clientSecret is never sent to the client)
 export const tenantSelect = {
@@ -67,9 +67,7 @@ export async function POST(req: Request) {
 
   let encryptedSecret: string | undefined;
   if (body.clientSecret) {
-    encryptedSecret = encryptionAvailable()
-      ? encryptString(body.clientSecret)
-      : body.clientSecret;
+    encryptedSecret = encryptString(body.clientSecret);
   }
 
   const tenant = await db.ssoTenant.create({

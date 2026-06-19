@@ -7,14 +7,25 @@ export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const services = await getCached(
+  const rows = await getCached(
     "services:all",
     () => db.service.findMany({
-      include: { _count: { select: { syncLogs: true } } },
+      include: {
+        _count: { select: { syncLogs: true } },
+        syncLogs: { take: 1, orderBy: { startedAt: "desc" } },
+      },
       orderBy: { name: "asc" },
     }),
     60
   );
+
+  // Strip encrypted config from list response — presence indicated by hasCredentials
+  const services = rows.map(({ config, ...rest }) => ({
+    ...rest,
+    hasCredentials: !!config,
+    latestLog: rest.syncLogs[0] ?? null,
+    syncLogs: undefined,
+  }));
 
   return NextResponse.json(services);
 }

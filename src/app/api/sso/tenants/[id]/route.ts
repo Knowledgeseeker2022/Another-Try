@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/authz";
-import { encryptString, decryptString, isEncrypted, encryptionAvailable } from "@/lib/crypto";
+import { encryptString } from "@/lib/crypto";
 import { tenantSelect } from "../route";
 
 function sanitize(tenant: { clientSecret?: string | null; [k: string]: unknown }) {
@@ -66,9 +66,7 @@ export async function PATCH(
     data.domains = body.domains.map((d) => d.toLowerCase().replace(/^@/, ""));
   }
   if (body.clientSecret) {
-    data.clientSecret = encryptionAvailable()
-      ? encryptString(body.clientSecret)
-      : body.clientSecret;
+    data.clientSecret = encryptString(body.clientSecret);
   }
 
   const updated = await db.ssoTenant.update({
@@ -122,26 +120,3 @@ export async function DELETE(
   return NextResponse.json({ ok: true });
 }
 
-// GET /api/sso/tenants/[id]/secret — returns the decrypted secret for display
-// (admin-only, requires sso:admin)
-export async function OPTIONS(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const authz = await requirePermission("sso", "admin");
-  if (!authz.ok) return authz.response;
-
-  const { id } = await params;
-  const tenant = await db.ssoTenant.findUnique({
-    where: { id },
-    select: { clientSecret: true },
-  });
-  if (!tenant) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const secret =
-    tenant.clientSecret && isEncrypted(tenant.clientSecret)
-      ? decryptString(tenant.clientSecret)
-      : tenant.clientSecret;
-
-  return NextResponse.json({ secret });
-}

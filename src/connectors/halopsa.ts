@@ -43,7 +43,7 @@ async function getHaloToken(tenantUrl: string, clientId: string, clientSecret: s
 export class HaloPSAConnector implements Connector {
   readonly slug = "halopsa";
 
-  async sync(config: Record<string, string>, db: PrismaClient): Promise<SyncResult> {
+  async sync(config: Record<string, string>, db: PrismaClient, lastSyncAt?: Date): Promise<SyncResult> {
     const { tenantUrl, clientId, clientSecret } = config;
     if (!tenantUrl || !clientId || !clientSecret) {
       throw new Error("HaloPSA requires tenantUrl, clientId, and clientSecret.");
@@ -53,7 +53,7 @@ export class HaloPSAConnector implements Connector {
     const token = await getHaloToken(base, clientId, clientSecret);
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-    // Sync clients → create OrgMappings + Organizations
+    // Client list is always a full sync — HaloPSA is the canonical source of truth
     const clientMap = new Map<number, string>(); // halo client id → our orgId
     for await (const clients of haloPSAPages<HaloClient>(base, "/api/Client", headers, "clients")) {
       for (const c of clients) {
@@ -87,8 +87,10 @@ export class HaloPSAConnector implements Connector {
     let recordsIn = 0;
     let recordsOut = 0;
 
-    // Sync open + pending tickets
-    for await (const tickets of haloPSAPages<HaloTicket>(base, "/api/Ticket", headers, "tickets")) {
+    // Ticket sync: incremental when lastSyncAt is provided, otherwise full pull
+    const ticketParams: Record<string, string> = {};
+    if (lastSyncAt) ticketParams.date_modified_gte = lastSyncAt.toISOString();
+    for await (const tickets of haloPSAPages<HaloTicket>(base, "/api/Ticket", headers, "tickets", 100, ticketParams)) {
       for (const t of tickets) {
         recordsIn++;
         const orgId = t.client_id != null ? (clientMap.get(t.client_id) ?? null) : null;

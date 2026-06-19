@@ -3,8 +3,9 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { invalidateCache } from "@/lib/redis";
-import { encryptConfig, encryptionAvailable } from "@/lib/crypto";
-import { queueSync } from "@/lib/queue";
+import { encryptConfig } from "@/lib/crypto";
+import { queueSync, upsertScheduler, removeScheduler } from "@/lib/queue";
+import { getServiceMeta } from "@/lib/service-config";
 
 export async function GET(
   _req: Request,
@@ -39,13 +40,12 @@ export async function PATCH(
   const updateData: Record<string, unknown> = {};
 
   if (config !== undefined) {
-    // Encrypt credentials if ENCRYPTION_KEY is set
     if (config && Object.keys(config as object).length > 0) {
-      updateData.config = encryptionAvailable()
-        ? encryptConfig(config as Record<string, unknown>)
-        : config;
+      // encryptConfig throws if ENCRYPTION_KEY is missing — fail loud, never store plaintext
+      updateData.config = encryptConfig(config as Record<string, unknown>);
       updateData.status = "CONNECTED";
       updateData.errorMessage = null;
+      updateData.consecutiveFailures = 0;
     }
   }
 
@@ -70,10 +70,20 @@ export async function PATCH(
       metadata: {
         pollInterval,
         syncMode: syncMode ?? service.syncMode,
-        encrypted: encryptionAvailable(),
       },
     },
   });
+
+  // Register or refresh the repeatable scheduler when a POLLING service has credentials
+  if (service.status === "CONNECTED" && service.syncMode === "POLLING") {
+    const meta = getServiceMeta(slug);
+    const intervalSeconds = service.pollInterval ?? (meta?.pollIntervalMinutes ?? 60) * 60;
+    try {
+      await upsertScheduler(slug, intervalSeconds);
+    } catch (err) {
+      console.error(`[api] Failed to upsert scheduler for ${slug}:`, err);
+    }
+  }
 
   const { config: _c, ...rest } = service;
   return NextResponse.json({ ...rest, hasCredentials: true });
@@ -95,7 +105,12 @@ export async function POST(
   if (action === "disconnect") {
     await db.service.update({
       where: { slug },
-      data: { status: "DISCONNECTED", config: Prisma.JsonNull, errorMessage: null },
+      data: {
+        status: "DISCONNECTED",
+        config: Prisma.JsonNull,
+        errorMessage: null,
+        consecutiveFailures: 0,
+      },
     });
     await invalidateCache("services:*");
     await db.auditLog.create({
@@ -106,6 +121,12 @@ export async function POST(
         userId: session.user?.id ?? null,
       },
     });
+    // Remove the repeatable scheduler so disconnected services don't re-fire
+    try {
+      await removeScheduler(slug);
+    } catch (err) {
+      console.error(`[api] Failed to remove scheduler for ${slug}:`, err);
+    }
     return NextResponse.json({ success: true });
   }
 

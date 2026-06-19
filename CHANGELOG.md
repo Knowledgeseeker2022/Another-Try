@@ -3,6 +3,21 @@
 All notable changes to Lake Evendim are recorded here, newest first. One plain-language
 line per change. Dates are `YYYY-MM-DD`.
 
+## 2026-06-19 — Phase 5: Services — mandatory encryption + automated scheduled polling
+
+1. **`ENCRYPTION_KEY` is now mandatory — no plaintext fallback.** `encryptConfig()` and `encryptString()` throw immediately if `ENCRYPTION_KEY` is missing; there is no silent plaintext path. Generate the key with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` and add it to `.env.local`. The `encryptionAvailable()` helper is deleted — callers cannot opt out.
+2. **Worker refuses to run with unencrypted credentials.** If a service's `config` is not an encrypted string (e.g., stored before `ENCRYPTION_KEY` was set), the sync job throws and surfaces an `ERROR` status rather than using plaintext. Re-enter credentials via the UI to re-encrypt.
+3. **`config` field stripped from all API responses.** `GET /api/services` and `GET /api/services/[slug]` never return the encrypted blob — presence is indicated by `hasCredentials: boolean`. The encrypted ciphertext was harmless without the key but confusing in payloads.
+4. **SSO reveal-secret endpoint deleted.** The `OPTIONS /api/sso/tenants/[id]` handler that returned the decrypted `clientSecret` is removed entirely. Credentials are write-only: to change a secret, re-enter it. No decryption-over-HTTP oracle.
+5. **Repeatable polling scheduler via BullMQ `upsertJobScheduler`.** On worker startup, all `CONNECTED` + `POLLING` services register a repeatable scheduler (idempotent on restart). `PATCH /api/services/[slug]` refreshes the scheduler when credentials are saved. Disconnect removes the scheduler so no ghost-fires occur.
+6. **Single concurrency lock per service: Redis `SET NX EX`.** Each sync acquires `lock:sync:{slug}` before doing any work. An overlapping scheduled fire or manual trigger skips immediately (logged as `service.sync.skipped`) — no double-ingestion, no upsert races. Lock TTL is 10 minutes; expires automatically on process crash.
+7. **Incremental watermark, advances only on full success.** Connectors receive `effectiveFrom = lastSyncAt - 5min` (5-minute overlap for idempotent re-fetch). On failure, `lastSyncAt` is not updated — next run re-fetches from the same watermark, so records modified mid-window are never dropped. HaloPSA uses `date_modified_gte`; Todyl uses `updated_after`; M365 does full pull (no incremental filter for Graph users).
+8. **Scheduled jobs swallow errors; manual jobs retry with backoff.** `triggeredBy: "scheduler"` jobs do not re-throw — the scheduler re-fires at the next interval. Manual-trigger jobs re-throw so BullMQ retries with exponential backoff (3 attempts, 5s base delay).
+9. **Consecutive-failure escalation.** `Service.consecutiveFailures` counter increments on every failed sync, resets to 0 on success. At threshold 3, the worker writes `service.sync.escalated` to the audit log and emits a `console.error`. The UI shows an amber "N consecutive failures — manual check required" banner on the card and a page-level escalation alert.
+10. **`nextSyncAt` computed and stored after each successful sync.** Displayed in the service card as "Next: X minutes" so the polling schedule is visible without opening the worker logs.
+11. **Latest sync run summary inline on each service card.** Status (success/error), record counts, duration, and triggered-by (Scheduled / Manual) are shown without a separate page load. The `GET /api/services` list response now includes the most-recent `ServiceSyncLog` row.
+12. Migration `20260619100000_phase5_service_hardening`: adds `Service.consecutiveFailures Int DEFAULT 0` and `ServiceSyncLog.triggeredBy Text`.
+
 ## 2026-06-19 — Phase 4: Client Groups — rule-based membership + controlled segments
 
 1. **`OrgGroupMode` enum added (`MANUAL` | `RULE_BASED`).** Each group now declares its membership mode. Existing groups default to `MANUAL` — no data migration needed.

@@ -43,7 +43,7 @@ function normalizeSeverity(s: TodylSeverity | string): string {
 export class TodylConnector implements Connector {
   readonly slug = "todyl";
 
-  async sync(config: Record<string, string>, db: PrismaClient): Promise<SyncResult> {
+  async sync(config: Record<string, string>, db: PrismaClient, lastSyncAt?: Date): Promise<SyncResult> {
     const { apiKey, orgId: todylOrgId } = config;
     if (!apiKey) throw new Error("Todyl requires an API key.");
 
@@ -60,6 +60,8 @@ export class TodylConnector implements Connector {
     while (true) {
       const params = new URLSearchParams({ page: String(page), per_page: "100" });
       if (todylOrgId) params.set("tenant_id", todylOrgId);
+      // Incremental: only fetch alerts updated since the watermark
+      if (lastSyncAt) params.set("updated_after", lastSyncAt.toISOString());
 
       const res = await fetch(`${TODYL_API}/alerts?${params}`, { headers });
       if (!res.ok) throw new Error(`Todyl API error ${res.status}: ${await res.text()}`);

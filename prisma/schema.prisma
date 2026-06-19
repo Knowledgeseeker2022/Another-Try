@@ -240,11 +240,12 @@ model Service {
   config      Json?         // encrypted credential config
   lastSyncAt  DateTime?
   nextSyncAt  DateTime?
-  pollInterval Int?         // seconds between polls
-  errorMessage String?
-  metadata    Json?         // logo URL, docs URL, etc.
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  pollInterval        Int?          // seconds between polls
+  consecutiveFailures Int           @default(0)
+  errorMessage        String?
+  metadata            Json?         // logo URL, docs URL, etc.
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   syncLogs    ServiceSyncLog[]
 }
@@ -257,6 +258,7 @@ model ServiceSyncLog {
   recordsOut  Int      @default(0)
   durationMs  Int?
   error       String?  @db.Text
+  triggeredBy String?  // user id or "scheduler"
   startedAt   DateTime @default(now())
   completedAt DateTime?
 
